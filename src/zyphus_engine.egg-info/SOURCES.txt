@@ -1,0 +1,8 @@
+README.md
+setup.py
+/home/ubuntu/Zyphus/Zyphus/src/zyphus_engine.egg-info/PKG-INFO
+/home/ubuntu/Zyphus/Zyphus/src/zyphus_engine.egg-info/SOURCES.txt
+/home/ubuntu/Zyphus/Zyphus/src/zyphus_engine.egg-info/dependency_links.txt
+/home/ubuntu/Zyphus/Zyphus/src/zyphus_engine.egg-info/entry_points.txt
+/home/ubuntu/Zyphus/Zyphus/src/zyphus_engine.egg-info/requires.txt
+/home/ubuntu/Zyphus/Zyphus/src/zyphus_engine.egg-info/top_level.txt

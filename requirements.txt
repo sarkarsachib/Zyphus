@@ -1,0 +1,10 @@
+click
+psutil
+watchdog
+lz4
+python-dotenv
+SQLAlchemy
+greenlet
+attrs
+propcache
+typing_extensions

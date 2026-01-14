@@ -1,0 +1,25 @@
+Metadata-Version: 2.4
+Name: zyphus-engine
+Version: 2.0.0.post1
+Summary: A fully CLI-based DEVmind Fusion Engine.
+Author: Zyphus Developer
+Description-Content-Type: text/markdown
+Requires-Dist: click
+Requires-Dist: psutil
+Requires-Dist: watchdog
+Requires-Dist: lz4
+Requires-Dist: python-dotenv
+Requires-Dist: SQLAlchemy
+Requires-Dist: greenlet
+Requires-Dist: attrs
+Requires-Dist: propcache
+Requires-Dist: typing_extensions
+Dynamic: author
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: requires-dist
+Dynamic: summary
+
+# Zyphus CLI Engine
+
+This is the command-line interface version of the Zyphus Fusion Engine.
