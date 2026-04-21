@@ -19,27 +19,39 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 
 # Assuming these modules are in the same directory or accessible via PYTHONPATH
-from universal_model_extractor import UniversalModelExtractor, ModelType, CognitiveTrait
-from universal_cognition_mapper import UniversalCognitionMapper
-from synthetic_model_generator import SyntheticModelGenerator
-from perpetual_self_train_loop import PerpetualSelfTrainLoop
-from fusion_core_storage import FusionCoreStorage
+from src.universal_model_extractor import UniversalModelExtractor, ModelType, CognitiveTrait
+from src.universal_cognition_mapper import UniversalCognitionMapper
+from src.synthetic_model_generator import SyntheticModelGenerator
+from src.perpetual_self_train_loop import PerpetualSelfTrainLoop
+from src.fusion_core_storage import FusionCoreStorage
 
 # Import Nishkraman components
-from nishkraman.awaken import NishkramanAwakeningProtocol
-from nishkraman.soul_seal import SoulSeal
-from nishkraman.autonomy_matrix import AutonomyMatrix
-from nishkraman.mood_drift_lock import MoodDriftLock
+try:
+    from nishkraman.awaken import NishkramanAwakeningProtocol
+except ImportError:
+    NishkramanAwakeningProtocol = None
+try:
+    from nishkraman.soul_seal import SoulSeal
+except ImportError:
+    SoulSeal = None
+try:
+    from nishkraman.autonomy_matrix import AutonomyMatrix
+except ImportError:
+    AutonomyMatrix = None
+try:
+    from nishkraman.mood_drift_lock import MoodDriftLock
+except ImportError:
+    MoodDriftLock = None
 
 # Import 200D Emotion Components
-from emotion_200d_system import EmotionState, EmotionDimension
-from emotion_interaction_table import EmotionInteractionTable
-from memory_tagging import MemoryTagger
-from cluster_modulation import ClusterModulator
-from emotion_entropy_filter import EmotionEntropyFilter
-from mood_stabilizer import MoodStabilizer
-from moral_guardrail import MoralGuardrail
-from creator_lock import CreatorLock
+from src.emotion_200d_system import EmotionState, EmotionDimension
+from src.emotion_interaction_table import EmotionInteractionTable
+from src.memory_tagging import MemoryTagger
+from src.cluster_modulation import ClusterModulator
+from src.emotion_entropy_filter import EmotionEntropyFilter
+from src.mood_stabilizer import MoodStabilizer
+from src.moral_guardrail import MoralGuardrail
+from src.creator_lock import CreatorLock
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format=

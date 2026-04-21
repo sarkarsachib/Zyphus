@@ -626,7 +626,7 @@ class TypeEvolverV3:
     
     def __init__(self, db_path: str = None):
         self.engine_id = f"evolver_v3_{uuid.uuid4().hex[:8]}"
-        self.db_path = db_path or "/home/ubuntu/devmind_backend/devmind_fusion_api/evolution_memory.db"
+        self.db_path = db_path or "evolution_memory.db"
         
         # Core components
         self.reflex_loop = ReflexLoop()
@@ -664,6 +664,12 @@ class TypeEvolverV3:
         self.rollback_enabled = True
         
         logger.info(f"TypeEvolver V3 Engine created: {self.engine_id}")
+    
+    async def initialize(self):
+        """Async initialization for compatibility"""
+        self.initialized = True
+        logger.info(f"TypeEvolver V3 initialized: {self.engine_id}")
+        return {"success": True}
     
     def _initialize_personality_arc(self) -> PersonalityArc:
         """Initialize personality development arc"""
@@ -1315,14 +1321,20 @@ class TypeEvolverV3:
             if '(' in code1 and ')' in code1:
                 base1 = code1.split('(')[0]
                 param1_str = code1.split('(')[1].split(')')[0]
-                param1 = float(param1_str)
+                try:
+                    param1 = float(param1_str)
+                except (ValueError, TypeError):
+                    param1 = 0.5
             else:
                 return code1
             
             if '(' in code2 and ')' in code2:
                 base2 = code2.split('(')[0]
                 param2_str = code2.split('(')[1].split(')')[0]
-                param2 = float(param2_str)
+                try:
+                    param2 = float(param2_str)
+                except (ValueError, TypeError):
+                    param2 = 0.5
             else:
                 return code2
             

@@ -38,7 +38,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # Import our model extractor components
-from universal_model_extractor import (
+from src.universal_model_extractor import (
     ModelCognitiveProfile, CognitiveTrait, CognitiveTraitCategory, 
     ModelType, ModelMetadata
 )
