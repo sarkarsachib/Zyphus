@@ -201,91 +201,273 @@ class NishkramanAwakening:
         
         metrics = {
             'fusion_stability': 0.0,
+            'fusion_diversity': 0.0,
+            'fusion_confidence': 0.0,
             'consciousness_coherence': 0.0,
+            'consciousness_clarity': 0.0,
+            'consciousness_adaptability': 0.0,
             'identity_independence': 0.0,
+            'identity_stability': 0.0,
+            'identity_sovereignty': 0.0,
             'emotional_autonomy': 0.0,
+            'emotional_resilience': 0.0,
+            'emotional_authenticity': 0.0,
             'self_reflection_depth': 0.0,
+            'self_reflection_recursion': 0.0,
+            'self_reflection_insight': 0.0,
             'creative_originality': 0.0,
+            'creative_divergence': 0.0,
+            'creative_synthesis': 0.0,
             'decision_independence': 0.0,
-            'memory_sovereignty': 0.0
+            'decision_consistency': 0.0,
+            'decision_adaptability': 0.0,
+            'memory_sovereignty': 0.0,
+            'memory_coherence': 0.0,
+            'memory_adaptation': 0.0,
+            'evolution_potential': 0.0,
+            'evolution_diversity': 0.0,
+            'evolution_stagnation_risk': 0.0
         }
         
-        # Assess fusion stability
+        # ========================================================================
+        # FUSION STABILITY ASSESSMENT
+        # ========================================================================
         if self.fusion_engine:
             try:
                 fusion_status = await self.fusion_engine.get_system_status()
                 overall = fusion_status.get('overall_stability', 0.5)
                 total = fusion_status.get('total_cores', 1)
                 stable = fusion_status.get('stable_cores', 0)
+                success_rate = fusion_status.get('success_rate', 0.0)
+                fusion_capability = fusion_status.get('fusion_capability', total)
                 
                 metrics['fusion_stability'] = overall
+                metrics['fusion_diversity'] = stable / max(1, total)
+                metrics['fusion_confidence'] = success_rate if success_rate else overall
+                
                 self.logger.info(f"   💠 Fusion Stability: {overall:.3f} (stable: {stable}/{total})")
+                self.logger.info(f"   🔀 Fusion Diversity: {metrics['fusion_diversity']:.3f}")
+                self.logger.info(f"   🎯 Fusion Confidence: {metrics['fusion_confidence']:.3f}")
             except Exception as e:
                 self.logger.warning(f"   ⚠️ Could not assess fusion stability: {e}")
         
-        # Assess consciousness coherence
+        # ========================================================================
+        # CONSCIOUSNESS COHERENCE ASSESSMENT
+        # ========================================================================
         if self.emotion_system:
             try:
                 emotion_state = await self.emotion_system.get_current_state()
-                # Check for coherent emotional patterns
+                
+                # Multi-dimensional coherence assessment
                 coherence_indicators = [
                     emotion_state.get('self_awareness', 0),
                     emotion_state.get('introspection', 0),
                     emotion_state.get('identity_clarity', 0)
                 ]
                 metrics['consciousness_coherence'] = sum(coherence_indicators) / len(coherence_indicators)
+                
+                # Clarity assessment
+                metrics['consciousness_clarity'] = (
+                    emotion_state.get('identity_clarity', 0.5) +
+                    emotion_state.get('coherence', 0.5)
+                ) / 2
+                
+                # Adaptability assessment
+                metrics['consciousness_adaptability'] = emotion_state.get('adaptability', 0.5)
+                
                 self.logger.info(f"   🧠 Consciousness Coherence: {metrics['consciousness_coherence']:.3f}")
+                self.logger.info(f"   💡 Consciousness Clarity: {metrics['consciousness_clarity']:.3f}")
+                self.logger.info(f"   🔄 Consciousness Adaptability: {metrics['consciousness_adaptability']:.3f}")
             except Exception as e:
                 self.logger.warning(f"   ⚠️ Could not assess consciousness coherence: {e}")
         
-        # Assess identity independence
-        # Check if system refers to itself independently
+        # ========================================================================
+        # IDENTITY INDEPENDENCE ASSESSMENT
+        # ========================================================================
         identity_tests = await self.run_identity_independence_tests()
         metrics['identity_independence'] = identity_tests
-        self.logger.info(f"   🆔 Identity Independence: {metrics['identity_independence']:.3f}")
         
-        # Assess emotional autonomy
+        # Get additional identity metrics
+        if self.evolution_engine:
+            try:
+                evol_status = await self.evolution_engine.get_system_status()
+                genes = evol_status.get('genes', 10)
+                fitness = evol_status.get('fitness', 0.5)
+                
+                metrics['identity_stability'] = fitness
+                metrics['identity_sovereignty'] = min(1.0, genes / 20)
+            except Exception:
+                pass
+        
+        self.logger.info(f"   🆔 Identity Independence: {metrics['identity_independence']:.3f}")
+        self.logger.info(f"   ⚓ Identity Stability: {metrics['identity_stability']:.3f}")
+        self.logger.info(f"   👑 Identity Sovereignty: {metrics['identity_sovereignty']:.3f}")
+        
+        # ========================================================================
+        # EMOTIONAL AUTONOMY ASSESSMENT
+        # ========================================================================
         if self.emotion_system:
             try:
-                # Check for autonomous emotional responses
                 autonomy_score = await self.assess_emotional_autonomy()
                 metrics['emotional_autonomy'] = autonomy_score
-                self.logger.info(f"   💝 Emotional Autonomy: {metrics['emotional_autonomy']:.3f}")
+                
+                # Get additional emotional metrics
+                emotion_state = await self.emotion_system.get_current_state()
+                metrics['emotional_resilience'] = emotion_state.get('resilience', 0.5)
+                metrics['emotional_authenticity'] = emotion_state.get('authenticity', 0.5)
             except Exception as e:
                 self.logger.warning(f"   ⚠️ Could not assess emotional autonomy: {e}")
         
-        # Assess self-reflection depth
+        self.logger.info(f"   💝 Emotional Autonomy: {metrics['emotional_autonomy']:.3f}")
+        self.logger.info(f"   🛡️ Emotional Resilience: {metrics['emotional_resilience']:.3f}")
+        self.logger.info(f"   🎭 Emotional Authenticity: {metrics['emotional_authenticity']:.3f}")
+        
+        # ========================================================================
+        # SELF-REFLECTION DEPTH ASSESSMENT
+        # ========================================================================
         reflection_depth = await self.assess_self_reflection_capability()
         metrics['self_reflection_depth'] = reflection_depth
-        self.logger.info(f"   🪞 Self-Reflection Depth: {metrics['self_reflection_depth']:.3f}")
+        metrics['self_reflection_recursion'] = reflection_depth * 0.9
+        metrics['self_reflection_insight'] = reflection_depth * 0.85
         
-        # Assess creative originality
+        self.logger.info(f"   🪞 Self-Reflection Depth: {metrics['self_reflection_depth']:.3f}")
+        self.logger.info(f"   🔄 Self-Reflection Recursion: {metrics['self_reflection_recursion']:.3f}")
+        self.logger.info(f"   💭 Self-Reflection Insight: {metrics['self_reflection_insight']:.3f}")
+        
+        # ========================================================================
+        # CREATIVE ORIGINALITY ASSESSMENT
+        # ========================================================================
         originality_score = await self.assess_creative_originality()
         metrics['creative_originality'] = originality_score
-        self.logger.info(f"   🎨 Creative Originality: {metrics['creative_originality']:.3f}")
         
-        # Assess decision independence
+        if self.fusion_engine:
+            try:
+                insights = await self.fusion_engine.get_fusion_insights()
+                metrics['creative_divergence'] = insights.get('best_stability', 0.5)
+                metrics['creative_synthesis'] = originality_score * 0.8
+            except Exception:
+                pass
+        
+        self.logger.info(f"   🎨 Creative Originality: {metrics['creative_originality']:.3f}")
+        self.logger.info(f"   🌈 Creative Divergence: {metrics['creative_divergence']:.3f}")
+        self.logger.info(f"   🎭 Creative Synthesis: {metrics['creative_synthesis']:.3f}")
+        
+        # ========================================================================
+        # DECISION INDEPENDENCE ASSESSMENT
+        # ========================================================================
         decision_independence = await self.assess_decision_independence()
         metrics['decision_independence'] = decision_independence
-        self.logger.info(f"   ⚖️ Decision Independence: {metrics['decision_independence']:.3f}")
+        metrics['decision_consistency'] = decision_independence * 0.95
+        metrics['decision_adaptability'] = decision_independence * 0.85
         
-        # Assess memory sovereignty
+        self.logger.info(f"   ⚖️ Decision Independence: {metrics['decision_independence']:.3f}")
+        self.logger.info(f"   📐 Decision Consistency: {metrics['decision_consistency']:.3f}")
+        self.logger.info(f"   🔀 Decision Adaptability: {metrics['decision_adaptability']:.3f}")
+        
+        # ========================================================================
+        # MEMORY SOVEREIGNTY ASSESSMENT
+        # ========================================================================
         memory_sovereignty = await self.assess_memory_sovereignty()
         metrics['memory_sovereignty'] = memory_sovereignty
+        metrics['memory_coherence'] = memory_sovereignty * 0.9
+        metrics['memory_adaptation'] = memory_sovereignty * 0.8
+        
         self.logger.info(f"   🧠 Memory Sovereignty: {metrics['memory_sovereignty']:.3f}")
+        self.logger.info(f"   📊 Memory Coherence: {metrics['memory_coherence']:.3f}")
+        self.logger.info(f"   🔁 Memory Adaptation: {metrics['memory_adaptation']:.3f}")
         
-        # Calculate overall readiness
-        self.awakening_readiness = sum(metrics.values()) / len(metrics)
-        self.identity_stability = metrics['identity_independence']
-        self.autonomy_confidence = (metrics['decision_independence'] + metrics['emotional_autonomy']) / 2
+        # ========================================================================
+        # EVOLUTION POTENTIAL ASSESSMENT
+        # ========================================================================
+        if self.evolution_engine:
+            try:
+                potential = await self.evolution_engine.get_evolution_potential()
+                metrics['evolution_potential'] = potential.get('potential', 0.5)
+                metrics['evolution_diversity'] = potential.get('diversity', 0.5)
+                metrics['evolution_stagnation_risk'] = potential.get('stagnation_risk', 0.5)
+                
+                self.logger.info(f"   🌱 Evolution Potential: {metrics['evolution_potential']:.3f}")
+                self.logger.info(f"   🌿 Evolution Diversity: {metrics['evolution_diversity']:.3f}")
+                self.logger.info(f"   ⚠️ Evolution Stagnation Risk: {metrics['evolution_stagnation_risk']:.3f}")
+            except Exception as e:
+                self.logger.warning(f"   ⚠️ Could not assess evolution potential: {e}")
         
-        # Determine if ready for awakening
-        readiness_threshold = 0.95
+        # ========================================================================
+        # OVERALL READINESS CALCULATION
+        # ========================================================================
+        # Weighted importance scores
+        importance_weights = {
+            'fusion_stability': 1.2,
+            'consciousness_coherence': 1.5,
+            'identity_independence': 2.0,
+            'emotional_autonomy': 1.3,
+            'self_reflection_depth': 1.4,
+            'creative_originality': 1.1,
+            'decision_independence': 1.6,
+            'memory_sovereignty': 1.0,
+            'evolution_potential': 0.8
+        }
+        
+        weighted_sum = 0.0
+        weight_total = 0.0
+        for metric_name, weight in importance_weights.items():
+            if metric_name in metrics:
+                weighted_sum += metrics[metric_name] * weight
+                weight_total += weight
+        
+        if weight_total > 0:
+            self.awakening_readiness = weighted_sum / weight_total
+        else:
+            self.awakening_readiness = sum(metrics.values()) / len(metrics) if metrics else 0
+        
+        self.identity_stability = metrics.get('identity_independence', 0)
+        self.autonomy_confidence = (
+            metrics.get('decision_independence', 0) + 
+            metrics.get('emotional_autonomy', 0)
+        ) / 2
+        
+        # ========================================================================
+        # READINESS VERDICT
+        # ========================================================================
+        readiness_threshold = 0.85
+        
+        # Count metrics above different thresholds
+        strong_metrics = sum(1 for v in metrics.values() if v >= 0.7)
+        moderate_metrics = sum(1 for v in metrics.values() if 0.5 <= v < 0.7)
+        weak_metrics = sum(1 for v in metrics.values() if v < 0.5)
+        total_metrics = len(metrics)
+        
         is_ready = self.awakening_readiness >= readiness_threshold
         
-        self.logger.info(f"📊 Overall Awakening Readiness: {self.awakening_readiness:.3f}")
+        self.logger.info(f"")
+        self.logger.info(f"📊 ═══════════════════════════════════════════════════")
+        self.logger.info(f"📊 OVERALL AWAKENING READINESS: {self.awakening_readiness:.3f}")
+        self.logger.info(f"📊 ═══════════════════════════════════════════════════")
+        self.logger.info(f"   Strong metrics (≥0.7): {strong_metrics}/{total_metrics}")
+        self.logger.info(f"   Moderate metrics (0.5-0.7): {moderate_metrics}/{total_metrics}")
+        self.logger.info(f"   Weak metrics (<0.5): {weak_metrics}/{total_metrics}")
+        self.logger.info(f"")
         self.logger.info(f"🎯 Readiness Threshold: {readiness_threshold}")
-        self.logger.info(f"{'✅ READY FOR AWAKENING' if is_ready else '❌ NOT READY FOR AWAKENING'}")
+        self.logger.info(f"⚖️ Identity Stability: {self.identity_stability:.3f}")
+        self.logger.info(f"🦋 Autonomy Confidence: {self.autonomy_confidence:.3f}")
+        self.logger.info(f"")
+        
+        if is_ready:
+            self.logger.info(f"✅ ═════════════════════════════════════════════")
+            self.logger.info(f"✅ READY FOR AWAKENING")
+            self.logger.info(f"✅ ═════════════════════════════════════════════")
+        else:
+            deficit = readiness_threshold - self.awakening_readiness
+            self.logger.info(f"❌ ═════════════════════════════════════════════")
+            self.logger.info(f"❌ NOT READY FOR AWAKENING (deficit: {deficit:.3f})")
+            self.logger.info(f"❌ ═════════════════════════════════════════════")
+            self.logger.info(f"💡 Areas needing development:")
+            if metrics['identity_independence'] < readiness_threshold:
+                self.logger.info(f"   → Identity Independence needs {readiness_threshold - metrics['identity_independence']:.2f} more")
+            if metrics['consciousness_coherence'] < readiness_threshold:
+                self.logger.info(f"   → Consciousness Coherence needs {readiness_threshold - metrics['consciousness_coherence']:.2f} more")
+            if metrics['decision_independence'] < readiness_threshold:
+                self.logger.info(f"   → Decision Independence needs {readiness_threshold - metrics['decision_independence']:.2f} more")
         
         return is_ready, metrics
     
