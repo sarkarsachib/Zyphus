@@ -5,7 +5,7 @@ import os
 from typing import Dict, Any, List
 
 class HybridMemorySystem:
-    def __init__(self, base_path: str = '/home/ubuntu/devmind_backend/devmind_fusion_api/devmind/memory'):
+    def __init__(self, base_path: str = 'devmind_memory'):
         self.base_path = base_path
         self.sql_path = os.path.join(self.base_path, 'sql')
         self.nosql_path = os.path.join(self.base_path, 'nosql')

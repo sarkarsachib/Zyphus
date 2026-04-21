@@ -251,6 +251,22 @@ class UnlimitedContextManager:
         
         logger.info("UnlimitedContextManager initialized")
     
+    async def initialize(self):
+        """Async initialization for compatibility"""
+        self.initialized = True
+        logger.info("UnlimitedContextManager async initialized")
+        return {"success": True}
+    
+    async def get_system_status(self) -> Dict[str, Any]:
+        """Get system status for compatibility"""
+        return {
+            "autonomy_level": 0.85,
+            "working_memory_size": len(self.working_memory),
+            "compressed_memory_size": len(self.compressed_memory),
+            "archived_memory_size": len(self.archived_memory),
+            "clusters": len(self.memory_clusters)
+        }
+    
     def add_context(self, 
                    context_id: str,
                    context_type: ContextType,

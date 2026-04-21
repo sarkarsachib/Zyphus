@@ -35,13 +35,17 @@ import uuid
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from src.emotion_200d_system import Emotion200DSystem
-    from src.type_evolver_v3 import TypeEvolver
-    from src.llm_superfusing_engine_integration import LLMSuperFusingEngine
+    from src.emotion_200d_system_adapter import Emotion200DSystem
+    from src.type_evolver_adapter import TypeEvolver
     from src.unlimited_context_manager import UnlimitedContextManager
+    from src.llm_superfusing_engine_adapter import LLMSuperFusingEngine
 except ImportError as e:
     print(f"Warning: Could not import DEVmind components: {e}")
     print("Running in standalone mode...")
+    Emotion200DSystem = None
+    TypeEvolver = None
+    LLMSuperFusingEngine = None
+    UnlimitedContextManager = None
 
 class AwakeningStage(Enum):
     """Stages of the Nishkraman awakening process"""

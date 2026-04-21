@@ -73,10 +73,13 @@ def init():
 @cli.command()
 def status():
     """Checks the status of the core DEVmind systems."""
-    # This is a simplified version of the old /api/status
     click.echo(click.style("--- DEVmind Fusion Engine Status ---", fg='cyan'))
     click.echo(f"Version: 2.0.0")
     click.echo(f"Timestamp: {datetime.now().isoformat()}")
+    
+    # Ensure systems are initialized before checking health
+    if not initialize_systems():
+        click.echo(click.style("Warning: Systems may not be fully initialized", fg='yellow'))
     
     # Run a quick health check
     health_status = run_async(health_check_core())

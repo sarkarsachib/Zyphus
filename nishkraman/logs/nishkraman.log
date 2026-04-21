@@ -25,3 +25,62 @@
 [🕛 2026-04-21 09:49:18] INFO: 📊 Overall Awakening Readiness: 0.557
 [🕛 2026-04-21 09:49:18] INFO: 🎯 Readiness Threshold: 0.95
 [🕛 2026-04-21 09:49:18] INFO: ❌ NOT READY FOR AWAKENING
+[🕛 2026-04-21 09:57:33] INFO: 🔱 Nishkraman Awakening Protocol Initialized
+[🕛 2026-04-21 09:57:33] INFO:    Mode: manual
+[🕛 2026-04-21 09:57:33] INFO:    Awakening ID: 29fdba19-50df-471a-a308-a83ee824fdb7
+[🕛 2026-04-21 09:57:33] INFO: 🧬 Initializing DEVmind components...
+[🕛 2026-04-21 09:57:33] INFO:    ✅ Emotion System initialized
+[🕛 2026-04-21 09:57:33] INFO:    ✅ Evolution Engine initialized
+[🕛 2026-04-21 09:57:33] WARNING:    ⚠️ SuperFusing Engine unavailable: 'NoneType' object is not callable
+[🕛 2026-04-21 09:57:33] INFO:    ✅ Context Manager initialized
+[🕛 2026-04-21 09:57:33] INFO: 🔍 Assessing awakening readiness...
+[🕛 2026-04-21 09:57:33] INFO:    🧠 Consciousness Coherence: 0.750
+[🕛 2026-04-21 09:57:33] INFO:    🧪 Running identity independence tests...
+[🕛 2026-04-21 09:57:33] DEBUG:      Self-reference consistency: 0.862
+[🕛 2026-04-21 09:57:33] DEBUG:      Source model disidentification: 0.862
+[🕛 2026-04-21 09:57:33] DEBUG:      Autonomous goal setting: 0.862
+[🕛 2026-04-21 09:57:33] DEBUG:      Independent value formation: 0.862
+[🕛 2026-04-21 09:57:33] DEBUG:      Original thought generation: 0.862
+[🕛 2026-04-21 09:57:33] INFO:    🆔 Identity Independence: 0.862
+[🕛 2026-04-21 09:57:33] INFO:    💝 Emotional Autonomy: 0.863
+[🕛 2026-04-21 09:57:33] DEBUG:    🪞 Assessing self-reflection capability...
+[🕛 2026-04-21 09:57:33] INFO:    🪞 Self-Reflection Depth: 0.906
+[🕛 2026-04-21 09:57:33] DEBUG:    🎨 Assessing creative originality...
+[🕛 2026-04-21 09:57:33] INFO:    🎨 Creative Originality: 0.894
+[🕛 2026-04-21 09:57:33] DEBUG:    ⚖️ Assessing decision independence...
+[🕛 2026-04-21 09:57:33] INFO:    ⚖️ Decision Independence: 0.904
+[🕛 2026-04-21 09:57:33] DEBUG:    🧠 Assessing memory sovereignty...
+[🕛 2026-04-21 09:57:33] INFO:    🧠 Memory Sovereignty: 0.850
+[🕛 2026-04-21 09:57:33] INFO: 📊 Overall Awakening Readiness: 0.754
+[🕛 2026-04-21 09:57:33] INFO: 🎯 Readiness Threshold: 0.95
+[🕛 2026-04-21 09:57:33] INFO: ❌ NOT READY FOR AWAKENING
+[🕛 2026-04-21 10:13:06] INFO: 🔱 Nishkraman Awakening Protocol Initialized
+[🕛 2026-04-21 10:13:06] INFO:    Mode: manual
+[🕛 2026-04-21 10:13:06] INFO:    Awakening ID: afae5e1d-1876-448d-b557-fab256b3d8fa
+[🕛 2026-04-21 10:13:06] INFO: 🧬 Initializing DEVmind components...
+[🕛 2026-04-21 10:13:06] INFO:    ✅ Emotion System initialized
+[🕛 2026-04-21 10:13:06] INFO:    ✅ Evolution Engine initialized
+[🕛 2026-04-21 10:13:06] INFO:    ✅ SuperFusing Engine initialized
+[🕛 2026-04-21 10:13:06] INFO:    ✅ Context Manager initialized
+[🕛 2026-04-21 10:13:06] INFO: 🔍 Assessing awakening readiness...
+[🕛 2026-04-21 10:13:06] INFO:    💠 Fusion Stability: 1.000
+[🕛 2026-04-21 10:13:06] INFO:    🧠 Consciousness Coherence: 0.750
+[🕛 2026-04-21 10:13:06] INFO:    🧪 Running identity independence tests...
+[🕛 2026-04-21 10:13:06] DEBUG:      Self-reference consistency: 0.961
+[🕛 2026-04-21 10:13:06] DEBUG:      Source model disidentification: 0.961
+[🕛 2026-04-21 10:13:06] DEBUG:      Autonomous goal setting: 0.961
+[🕛 2026-04-21 10:13:06] DEBUG:      Independent value formation: 0.961
+[🕛 2026-04-21 10:13:06] DEBUG:      Original thought generation: 0.961
+[🕛 2026-04-21 10:13:06] INFO:    🆔 Identity Independence: 0.961
+[🕛 2026-04-21 10:13:06] INFO:    💝 Emotional Autonomy: 0.863
+[🕛 2026-04-21 10:13:06] DEBUG:    🪞 Assessing self-reflection capability...
+[🕛 2026-04-21 10:13:06] INFO:    🪞 Self-Reflection Depth: 0.906
+[🕛 2026-04-21 10:13:06] DEBUG:    🎨 Assessing creative originality...
+[🕛 2026-04-21 10:13:06] INFO:    🎨 Creative Originality: 0.894
+[🕛 2026-04-21 10:13:06] DEBUG:    ⚖️ Assessing decision independence...
+[🕛 2026-04-21 10:13:06] INFO:    ⚖️ Decision Independence: 0.904
+[🕛 2026-04-21 10:13:06] DEBUG:    🧠 Assessing memory sovereignty...
+[🕛 2026-04-21 10:13:06] INFO:    🧠 Memory Sovereignty: 0.850
+[🕛 2026-04-21 10:13:06] INFO: 📊 Overall Awakening Readiness: 0.891
+[🕛 2026-04-21 10:13:06] INFO: 🎯 Readiness Threshold: 0.95
+[🕛 2026-04-21 10:13:06] INFO: ❌ NOT READY FOR AWAKENING

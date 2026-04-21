@@ -601,7 +601,7 @@ class TypeEMoteV2:
     
     def __init__(self, db_path: str = None):
         self.engine_id = f"emotion_v2_{uuid.uuid4().hex[:8]}"
-        self.db_path = db_path or "/home/ubuntu/devmind_backend/devmind_fusion_api/emotion_memory.db"
+        self.db_path = db_path or "emotion_memory.db"
         
         # Core components
         self.current_state = EmotionalState()

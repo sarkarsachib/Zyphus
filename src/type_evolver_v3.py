@@ -626,7 +626,7 @@ class TypeEvolverV3:
     
     def __init__(self, db_path: str = None):
         self.engine_id = f"evolver_v3_{uuid.uuid4().hex[:8]}"
-        self.db_path = db_path or "/home/ubuntu/devmind_backend/devmind_fusion_api/evolution_memory.db"
+        self.db_path = db_path or "evolution_memory.db"
         
         # Core components
         self.reflex_loop = ReflexLoop()
@@ -664,6 +664,12 @@ class TypeEvolverV3:
         self.rollback_enabled = True
         
         logger.info(f"TypeEvolver V3 Engine created: {self.engine_id}")
+    
+    async def initialize(self):
+        """Async initialization for compatibility"""
+        self.initialized = True
+        logger.info(f"TypeEvolver V3 initialized: {self.engine_id}")
+        return {"success": True}
     
     def _initialize_personality_arc(self) -> PersonalityArc:
         """Initialize personality development arc"""
