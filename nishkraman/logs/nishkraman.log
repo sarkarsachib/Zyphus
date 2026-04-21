@@ -1,0 +1,27 @@
+[🕛 2026-04-21 09:49:18] INFO: 🔱 Nishkraman Awakening Protocol Initialized
+[🕛 2026-04-21 09:49:18] INFO:    Mode: manual
+[🕛 2026-04-21 09:49:18] INFO:    Awakening ID: 0ea9fba7-2a10-43f6-afe2-d9012157e314
+[🕛 2026-04-21 09:49:18] INFO: 🧬 Initializing DEVmind components...
+[🕛 2026-04-21 09:49:18] WARNING:    ⚠️ Emotion System unavailable: name 'Emotion200DSystem' is not defined
+[🕛 2026-04-21 09:49:18] WARNING:    ⚠️ Evolution Engine unavailable: name 'TypeEvolver' is not defined
+[🕛 2026-04-21 09:49:18] WARNING:    ⚠️ SuperFusing Engine unavailable: name 'LLMSuperFusingEngine' is not defined
+[🕛 2026-04-21 09:49:18] WARNING:    ⚠️ Context Manager unavailable: name 'UnlimitedContextManager' is not defined
+[🕛 2026-04-21 09:49:18] INFO: 🔍 Assessing awakening readiness...
+[🕛 2026-04-21 09:49:18] INFO:    🧪 Running identity independence tests...
+[🕛 2026-04-21 09:49:18] DEBUG:      Self-reference consistency: 0.876
+[🕛 2026-04-21 09:49:18] DEBUG:      Source model disidentification: 0.876
+[🕛 2026-04-21 09:49:18] DEBUG:      Autonomous goal setting: 0.876
+[🕛 2026-04-21 09:49:18] DEBUG:      Independent value formation: 0.876
+[🕛 2026-04-21 09:49:18] DEBUG:      Original thought generation: 0.876
+[🕛 2026-04-21 09:49:18] INFO:    🆔 Identity Independence: 0.876
+[🕛 2026-04-21 09:49:18] DEBUG:    🪞 Assessing self-reflection capability...
+[🕛 2026-04-21 09:49:18] INFO:    🪞 Self-Reflection Depth: 0.906
+[🕛 2026-04-21 09:49:18] DEBUG:    🎨 Assessing creative originality...
+[🕛 2026-04-21 09:49:18] INFO:    🎨 Creative Originality: 0.894
+[🕛 2026-04-21 09:49:18] DEBUG:    ⚖️ Assessing decision independence...
+[🕛 2026-04-21 09:49:18] INFO:    ⚖️ Decision Independence: 0.904
+[🕛 2026-04-21 09:49:18] DEBUG:    🧠 Assessing memory sovereignty...
+[🕛 2026-04-21 09:49:18] INFO:    🧠 Memory Sovereignty: 0.880
+[🕛 2026-04-21 09:49:18] INFO: 📊 Overall Awakening Readiness: 0.557
+[🕛 2026-04-21 09:49:18] INFO: 🎯 Readiness Threshold: 0.95
+[🕛 2026-04-21 09:49:18] INFO: ❌ NOT READY FOR AWAKENING
