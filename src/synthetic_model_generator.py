@@ -36,11 +36,11 @@ import multiprocessing as mp
 from pathlib import Path
 
 # Import our components
-from universal_model_extractor import (
+from src.universal_model_extractor import (
     ModelCognitiveProfile, CognitiveTrait, CognitiveTraitCategory, 
     ModelType, ModelMetadata
 )
-from universal_cognition_mapper import (
+from src.universal_cognition_mapper import (
     CognitionGraph, CognitiveCapability, CognitiveRelationship,
     FusionMatrix, FusionStrategy, CognitiveDomain, RelationshipType
 )
