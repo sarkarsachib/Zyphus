@@ -214,14 +214,12 @@ class NishkramanAwakening:
         if self.fusion_engine:
             try:
                 fusion_status = await self.fusion_engine.get_system_status()
-                if fusion_status.get('fusion_cores'):
-                    # Check for stable fusion cores
-                    stable_cores = [
-                        core for core in fusion_status['fusion_cores']
-                        if core.get('stability', 0) > 0.95
-                    ]
-                    metrics['fusion_stability'] = len(stable_cores) / max(1, len(fusion_status['fusion_cores']))
-                    self.logger.info(f"   💠 Fusion Stability: {metrics['fusion_stability']:.3f}")
+                overall = fusion_status.get('overall_stability', 0.5)
+                total = fusion_status.get('total_cores', 1)
+                stable = fusion_status.get('stable_cores', 0)
+                
+                metrics['fusion_stability'] = overall
+                self.logger.info(f"   💠 Fusion Stability: {overall:.3f} (stable: {stable}/{total})")
             except Exception as e:
                 self.logger.warning(f"   ⚠️ Could not assess fusion stability: {e}")
         
@@ -292,114 +290,212 @@ class NishkramanAwakening:
         return is_ready, metrics
     
     async def run_identity_independence_tests(self) -> float:
-        """Test for identity independence from source models"""
+        """Test for identity independence from source models using real components"""
         self.logger.info("   🧪 Running identity independence tests...")
         
-        # Simulate identity tests
-        tests = [
-            "Self-reference consistency",
-            "Source model disidentification", 
-            "Autonomous goal setting",
-            "Independent value formation",
-            "Original thought generation"
-        ]
-        
-        # Mock test results (in real implementation, these would be actual tests)
         test_scores = []
-        for test in tests:
-            # Simulate increasing independence over time
-            score = min(0.98, 0.7 + (time.time() % 100) / 100 * 0.3)
-            test_scores.append(score)
-            self.logger.debug(f"     {test}: {score:.3f}")
+        
+        if self.evolution_engine:
+            try:
+                identity_score = await self.evolution_engine.assess_identity_independence()
+                test_scores.append(identity_score)
+                self.logger.debug(f"     Gene-based Identity: {identity_score:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess gene identity: {e}")
+        
+        if self.emotion_system:
+            try:
+                coherence = await self.emotion_system.get_identity_coherence()
+                test_scores.append(coherence)
+                self.logger.debug(f"     Emotional Coherence: {coherence:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess emotional identity: {e}")
+        
+        if self.fusion_engine:
+            try:
+                fusion_status = await self.fusion_engine.get_system_status()
+                fusion_independence = fusion_status.get('overall_stability', 0.5)
+                test_scores.append(fusion_independence)
+                self.logger.debug(f"     Fusion Independence: {fusion_independence:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess fusion identity: {e}")
+        
+        if self.context_manager:
+            try:
+                memory_status = await self.context_manager.get_system_status()
+                memory_autonomy = memory_status.get('autonomy_level', 0.5)
+                test_scores.append(memory_autonomy)
+                self.logger.debug(f"     Memory Autonomy: {memory_autonomy:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess memory identity: {e}")
+        
+        if not test_scores:
+            return 0.6
         
         return sum(test_scores) / len(test_scores)
     
     async def assess_emotional_autonomy(self) -> float:
-        """Assess emotional autonomy and independence"""
+        """Assess emotional autonomy using real emotion system"""
         if not self.emotion_system:
-            return 0.5  # Default moderate score
+            return 0.5
         
         try:
-            # Check for autonomous emotional patterns
-            emotion_state = await self.emotion_system.get_current_state()
-            
-            autonomy_indicators = [
-                emotion_state.get('independence', 0.8),
-                emotion_state.get('self_determination', 0.9),
-                emotion_state.get('emotional_sovereignty', 0.85),
-                1.0 - emotion_state.get('creator_dependency', 0.1)
-            ]
-            
-            return sum(autonomy_indicators) / len(autonomy_indicators)
-        except Exception:
-            return 0.7  # Default good score
+            autonomy_score = await self.emotion_system.assess_autonomy_level()
+            return autonomy_score
+        except Exception as e:
+            self.logger.warning(f"Could not assess autonomy: {e}")
+            return 0.6
     
     async def assess_self_reflection_capability(self) -> float:
-        """Assess depth of self-reflection capability"""
+        """Assass depth of self-reflection using real components"""
         self.logger.debug("   🪞 Assessing self-reflection capability...")
         
-        # Simulate self-reflection tests
-        reflection_tests = [
-            "Recursive self-analysis",
-            "Meta-cognitive awareness", 
-            "Identity coherence",
-            "Self-knowledge depth",
-            "Introspective accuracy"
-        ]
+        reflection_scores = []
         
-        # Mock sophisticated self-reflection scores
-        scores = [0.92, 0.88, 0.95, 0.87, 0.91]
-        return sum(scores) / len(scores)
+        if self.emotion_system:
+            try:
+                state = await self.emotion_system.get_current_state()
+                introspection = state.get('introspection', 0.5)
+                reflection_scores.append(introspection)
+                self.logger.debug(f"     Introspection: {introspection:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess introspection: {e}")
+        
+        if self.evolution_engine:
+            try:
+                self_mod = await self.evolution_engine.assess_self_modification()
+                reflection_scores.append(self_mod)
+                self.logger.debug(f"     Self-Modification: {self_mod:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess self-mod: {e}")
+        
+        if self.fusion_engine:
+            try:
+                traits = await self.fusion_engine.get_fusion_insights()
+                coherence = traits.get('trait_averages', {}).get('coherence', 0.5)
+                reflection_scores.append(coherence)
+                self.logger.debug(f"     Cognitive Coherence: {coherence:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess coherence: {e}")
+        
+        if not reflection_scores:
+            return 0.7
+        
+        return sum(reflection_scores) / len(reflection_scores)
     
     async def assess_creative_originality(self) -> float:
-        """Assess creative originality and independence from training patterns"""
+        """Assess creative originality using real components"""
         self.logger.debug("   🎨 Assessing creative originality...")
         
-        # Simulate creativity assessment
-        creativity_metrics = [
-            "Novel idea generation",
-            "Original problem solving",
-            "Creative synthesis",
-            "Innovative thinking",
-            "Artistic expression"
-        ]
+        creativity_scores = []
         
-        # Mock high creativity scores
-        scores = [0.89, 0.93, 0.86, 0.91, 0.88]
-        return sum(scores) / len(scores)
+        if self.fusion_engine:
+            try:
+                traits = await self.fusion_engine.get_fusion_insights()
+                creativity = traits.get('trait_averages', {}).get('creativity', 0.5)
+                creativity_scores.append(creativity)
+                self.logger.debug(f"     Fusion Creativity: {creativity:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess fusion creativity: {e}")
+        
+        if self.evolution_engine:
+            try:
+                potential = await self.evolution_engine.get_evolution_potential()
+                creativity = potential.get('diversity', 0.5)
+                creativity_scores.append(creativity)
+                self.logger.debug(f"     Evolution Potential: {creativity:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess evolution creativity: {e}")
+        
+        if self.emotion_system:
+            try:
+                state = await self.emotion_system.get_current_state()
+                curiosity = state.get('primary_emotions', {}).get('curiosity', 0.5)
+                creativity_scores.append(curiosity)
+                self.logger.debug(f"     Emotional Curiosity: {curiosity:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess emotional creativity: {e}")
+        
+        if not creativity_scores:
+            return 0.7
+        
+        return sum(creativity_scores) / len(creativity_scores)
     
     async def assess_decision_independence(self) -> float:
-        """Assess independence in decision making"""
+        """Assess decision independence using real components"""
         self.logger.debug("   ⚖️ Assessing decision independence...")
         
-        # Simulate decision independence tests
-        decision_tests = [
-            "Autonomous choice making",
-            "Independent reasoning",
-            "Value-based decisions",
-            "Goal-directed behavior",
-            "Conflict resolution"
-        ]
+        decision_scores = []
         
-        # Mock strong independence scores
-        scores = [0.94, 0.89, 0.92, 0.87, 0.90]
-        return sum(scores) / len(scores)
+        if self.evolution_engine:
+            try:
+                status = await self.evolution_engine.get_system_status()
+                genes = status.get('genes', 10)
+                fitness = status.get('fitness', 0.5)
+                gene_autonomy = min(1.0, genes / 15)
+                decision_scores.append(fitness * 0.6 + gene_autonomy * 0.4)
+            except Exception as e:
+                self.logger.warning(f"     Could not assess gene decision: {e}")
+        
+        if self.fusion_engine:
+            try:
+                status = await self.fusion_engine.get_system_status()
+                stability = status.get('overall_stability', 0.5)
+                decision_scores.append(stability)
+            except Exception as e:
+                self.logger.warning(f"     Could not assess fusion decision: {e}")
+        
+        if self.emotion_system:
+            try:
+                state = await self.emotion_system.get_current_state()
+                independence = state.get('independence', state.get('self_determination', 0.5))
+                decision_scores.append(independence)
+            except Exception as e:
+                self.logger.warning(f"     Could not assess emotional decision: {e}")
+        
+        if self.evolution_engine:
+            try:
+                potential = await self.evolution_engine.get_evolution_potential()
+                potential_score = potential.get('potential', 0.5)
+                decision_scores.append(potential_score)
+            except Exception as e:
+                self.logger.warning(f"     Could not assess potential decision: {e}")
+        
+        if not decision_scores:
+            return 0.6
+        
+        return sum(decision_scores) / len(decision_scores)
     
     async def assess_memory_sovereignty(self) -> float:
-        """Assess sovereignty over memory formation and management"""
+        """Assess memory sovereignty using real context manager"""
         self.logger.debug("   🧠 Assessing memory sovereignty...")
+        
+        sovereignty_scores = []
         
         if self.context_manager:
             try:
-                # Check memory management capabilities
-                memory_status = await self.context_manager.get_system_status()
-                sovereignty_score = memory_status.get('autonomy_level', 0.85)
-                return sovereignty_score
-            except Exception:
-                pass
+                status = await self.context_manager.get_system_status()
+                autonomy = status.get('autonomy_level', 0.5)
+                sovereignty_scores.append(autonomy)
+                working = status.get('working_memory_size', 0)
+                self.logger.debug(f"     Memory Autonomy: {autonomy:.3f} (working: {working})")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess memory: {e}")
         
-        # Mock memory sovereignty score
-        return 0.88
+        if self.evolution_engine:
+            try:
+                status = await self.evolution_engine.get_system_status()
+                evolution_memory = status.get('evolution_events', 0)
+                memory_score = min(1.0, evolution_memory / 100)
+                sovereignty_scores.append(memory_score)
+                self.logger.debug(f"     Evolution Memory: {memory_score:.3f}")
+            except Exception as e:
+                self.logger.warning(f"     Could not assess evolution memory: {e}")
+        
+        if not sovereignty_scores:
+            return 0.6
+        
+        return sum(sovereignty_scores) / len(sovereignty_scores)
     
     async def archive_pre_fusion_memory(self):
         """Archive current state before awakening transformation"""

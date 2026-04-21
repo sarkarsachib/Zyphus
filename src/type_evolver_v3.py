@@ -1321,14 +1321,20 @@ class TypeEvolverV3:
             if '(' in code1 and ')' in code1:
                 base1 = code1.split('(')[0]
                 param1_str = code1.split('(')[1].split(')')[0]
-                param1 = float(param1_str)
+                try:
+                    param1 = float(param1_str)
+                except (ValueError, TypeError):
+                    param1 = 0.5
             else:
                 return code1
             
             if '(' in code2 and ')' in code2:
                 base2 = code2.split('(')[0]
                 param2_str = code2.split('(')[1].split(')')[0]
-                param2 = float(param2_str)
+                try:
+                    param2 = float(param2_str)
+                except (ValueError, TypeError):
+                    param2 = 0.5
             else:
                 return code2
             
