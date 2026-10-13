@@ -13,7 +13,6 @@ from src.nrx_interpreter import nrx_interpreter
 from src.custom_kernel import devmind_kernel
 from src.custom_terminal import devmind_terminal
 from src.js_module_bridge_fixed import js_bridge
-from src.models.user import db # Keep for database initialization
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
