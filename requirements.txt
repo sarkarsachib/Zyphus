@@ -1,5 +1,6 @@
 click
 psutil
+numpy
 watchdog
 lz4
 python-dotenv

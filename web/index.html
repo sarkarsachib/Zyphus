@@ -113,6 +113,21 @@
   .action .args { color: var(--muted); margin-top: 6px; word-break: break-word; }
   .action .out { color: #b9c7d9; margin-top: 6px; white-space: pre-wrap;
     word-break: break-word; max-height: 130px; overflow: auto; }
+  input.input {
+    flex: 1 1 240px; min-width: 160px; padding: 9px 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: #060a10; color: var(--ink);
+    font: 13px ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .examples button {
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    font-weight: 500; padding: 6px 11px; border-radius: 999px; font-size: 12px;
+  }
+  .examples button:hover { color: var(--ink); border-color: #2b3d55; }
+  .beat { display: flex; align-items: baseline; gap: 10px; margin-top: 12px; }
+  .beat b { font-size: 24px; color: var(--accent); letter-spacing: .02em; }
+  .beat span { color: var(--muted); font-size: 12px; }
+  audio { width: 100%; margin-top: 12px; }
   footer { margin-top: 26px; color: var(--muted); font-size: 12px; text-align: center; }
   code { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #cbd8e8; }
 </style>
@@ -156,6 +171,43 @@
       <div class="grid" id="agent-tools"></div>
       <h2 style="margin: 22px 0 0;">Recent tool calls</h2>
       <div class="actions" id="agent-actions"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Drive the agent</h2>
+        <div class="badge" id="control-state"><span class="dot"></span><span id="control-state-text">checking…</span></div>
+      </div>
+      <div class="row">
+        <input id="token" class="input" type="password" autocomplete="off"
+               placeholder="control token" />
+        <span class="hint">Kept in this browser only, and checked by the server against
+          <code>ZYPHUS_CONTROL_TOKEN</code>.</span>
+      </div>
+      <textarea id="task" spellcheck="false">read src/agent/brain.py and write a note about it</textarea>
+      <div class="row">
+        <button id="send">Send to the agent</button>
+        <span class="hint">Plain English works; <code>shell:</code>, <code>look:</code>,
+          <code>say:</code> and <code>self:</code> give it a direct order.</span>
+      </div>
+      <div class="row examples" id="task-examples"></div>
+      <pre class="log" id="task-log">Waiting for an instruction…</pre>
+    </section>
+
+    <section class="card">
+      <h2>Body</h2>
+      <div class="beat" id="beat"></div>
+      <div class="counts" id="vitals"></div>
+      <div class="grid" id="body-links"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Voice</h2>
+        <button class="ghost" id="play-voice">Play newest</button>
+      </div>
+      <audio id="voice-audio" controls preload="none"></audio>
+      <div class="actions" id="voice-list"></div>
     </section>
 
     <section class="card">
@@ -293,16 +345,143 @@ function renderAgent(data) {
     : '<div class="action">no tool calls recorded yet</div>';
 }
 
+function renderBody(vitals) {
+  const beat = $("beat");
+  const links = $("body-links");
+  if (!vitals || !vitals.pulse) {
+    beat.innerHTML = `<span>${escapeHtml((vitals && vitals.error) || "no body reading yet")}</span>`;
+    links.innerHTML = "";
+    $("vitals").innerHTML = "";
+    return;
+  }
+  const pulse = vitals.pulse;
+  beat.innerHTML = pulse.available === false
+    ? `<span>rhythm unavailable — ${escapeHtml(pulse.error || "unknown reason")}</span>`
+    : `<b>${escapeHtml(String(pulse.rate_hz))} Hz</b><span>${escapeHtml(pulse.rhythm)} · ${escapeHtml(pulse.rhythm_meaning)}</span>`;
+
+  const mood = vitals.mood || {};
+  $("vitals").innerHTML = [
+    ["load", vitals.load], ["energy", pulse.energy], ["stress", pulse.stress],
+    ["coherence", pulse.coherence], ["beats felt", pulse.beats_felt],
+    ["mood", mood.label || "unknown"],
+  ].map(([key, value]) =>
+    `<span>${key} <b>${escapeHtml(value === undefined || value === null ? "—" : String(value))}</b></span>`
+  ).join("");
+
+  links.innerHTML = (vitals.links || []).map((link) => {
+    const on = link.status === "linked";
+    return `<div class="chip ${on ? "ok" : "bad"}" title="${escapeHtml(link.status)}">
+      <span class="name">${escapeHtml(link.module)}</span><b>${on ? "linked" : "off"}</b>
+    </div>`;
+  }).join("");
+}
+
+function renderVoice(voice, actions) {
+  const utterances = (voice && voice.utterances) || [];
+  const latest = voice && voice.latest;
+  const player = $("voice-audio");
+  if (latest) {
+    const url = "/api/agent/voice/" + latest.file;
+    if (player.getAttribute("src") !== url) player.setAttribute("src", url);
+  } else if (player.getAttribute("src")) {
+    player.removeAttribute("src");
+    player.load();
+  }
+  $("play-voice").disabled = !latest;
+
+  const said = (actions || []).filter((action) => action.tool === "speak").slice(0, 5);
+  $("voice-list").innerHTML = said.length
+    ? said.map((action) => `
+      <div class="action">
+        <div class="head"><span class="tool">voice</span><span>${escapeHtml(action.created_at)}</span></div>
+        <div class="out">${escapeHtml(String((action.arguments || {}).text || ""))}</div>
+      </div>`).join("")
+    : `<div class="action">${utterances.length
+        ? "audio recorded, no utterance text logged"
+        : "the agent has not spoken yet"}</div>`;
+}
+
+function renderControl(control) {
+  const armed = !!(control && control.configured);
+  const badge = $("control-state");
+  badge.classList.remove("ok", "bad");
+  badge.classList.add(armed ? "ok" : "bad");
+  $("control-state-text").textContent = armed ? "armed" : "token required";
+}
+
 async function loadAgent() {
   try {
-    renderAgent(await (await fetch("/api/agent")).json());
+    const data = await (await fetch("/api/agent")).json();
+    renderAgent(data);
+    renderBody(data.vitals);
+    renderVoice(data.voice, data.recent_actions);
+    renderControl(data.control);
   } catch (err) {
     renderAgent({ available: false, error: "request failed: " + err.message });
+    renderBody(null);
+    renderVoice(null, []);
+    renderControl(null);
   }
 }
 
+function renderTaskResult(data) {
+  const parts = [`task ${data.task_id || "—"} → ${data.action || "?"}`];
+  if (data.tools) parts.push("tools: " + data.tools.join(" -> "));
+  if (data.output) parts.push("", data.output);
+  if (data.error) parts.push("", "error: " + data.error);
+  return parts.join("\n");
+}
+
+async function sendTask() {
+  const button = $("send");
+  const log = $("task-log");
+  button.disabled = true;
+  log.className = "log";
+  log.textContent = "Sending…";
+  try {
+    const token = $("token").value;
+    const res = await fetch("/api/agent/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Zyphus-Token": token },
+      body: JSON.stringify({ token, instructions: $("task").value }),
+    });
+    const data = await res.json();
+    log.className = "log " + (res.ok ? "ok" : "bad");
+    log.textContent = res.ok ? renderTaskResult(data) : "Refused: " + (data.error || res.status);
+  } catch (err) {
+    log.className = "log bad";
+    log.textContent = "Request failed: " + err.message;
+  } finally {
+    button.disabled = false;
+    loadAgent();
+  }
+}
+
+const TOKEN_KEY = "zyphus-control-token";
+const EXAMPLES = [
+  "vitals",
+  "say: I am awake and watching my own queue",
+  "self:reflect",
+  "read src/agent/senses.py",
+  "shell: ls -la devmind/agent",
+];
+
 $("refresh").addEventListener("click", () => { loadStatus(); loadAgent(); });
 $("run").addEventListener("click", runCode);
+$("send").addEventListener("click", sendTask);
+$("token").value = localStorage.getItem(TOKEN_KEY) || "";
+$("token").addEventListener("change", () => localStorage.setItem(TOKEN_KEY, $("token").value));
+$("task").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) sendTask();
+});
+$("play-voice").addEventListener("click", () => $("voice-audio").play());
+$("task-examples").innerHTML = EXAMPLES.map((example) =>
+  `<button type="button" data-example="${escapeHtml(example)}">${escapeHtml(example)}</button>`).join("");
+$("task-examples").addEventListener("click", (event) => {
+  const value = event.target.dataset && event.target.dataset.example;
+  if (value) $("task").value = value;
+});
+
 loadAgent();
 setInterval(loadAgent, 6000);
 loadStatus();

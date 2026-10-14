@@ -16,6 +16,12 @@ services:
       - ./:/app
     ports:
       - "3000:3000"
+    env_file:
+      # Platform-managed secrets, delivered outside the repo. Listed last so the
+      # operator's real values always win over anything set here.
+      #   ZYPHUS_CONTROL_TOKEN - the passphrase that arms the dashboard task box
+      #   OPENAI_API_KEY       - optional; enables the model-backed brain
+      - /run/base44/app.env
     environment:
       - BASE44_PREVIEW_MODE
       - PYTHONUNBUFFERED=1

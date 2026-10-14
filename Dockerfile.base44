@@ -8,8 +8,11 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Node.js powers the engine's JavaScript module bridge (src/js_module_bridge_fixed.py).
+# node powers the engine's JavaScript module bridge and the agent's js_module tool.
+# espeak-ng is the agent's voice: the `speak` tool renders text to a wav (no audio
+# device needed) and the dashboard plays it.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nodejs curl \
+    && apt-get install -y --no-install-recommends nodejs curl espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

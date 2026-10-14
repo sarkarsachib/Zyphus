@@ -196,7 +196,55 @@ def web_fetch(url: str, timeout: float = 30) -> ToolResult:
                       error=fetched.error, meta=fetched.meta)
 
 
+def js_module(name: str = "") -> ToolResult:
+    """Load one of the engine's own ESM modules with node and report its shape."""
+    modules_root = os.path.join(REPO_ROOT, "src", "modules")
+    runner = os.path.join(modules_root, "run_module.mjs")
+    if not os.path.isfile(runner):
+        return ToolResult(False, error=f"module runner missing: {runner}")
+
+    if not name:
+        found = []
+        for root, _dirs, files in os.walk(modules_root):
+            for entry in sorted(files):
+                if entry.endswith(".js"):
+                    found.append(os.path.relpath(os.path.join(root, entry), modules_root))
+        return ToolResult(True, output="\n".join(found) or "(no modules found)",
+                          meta={"modules": found})
+
+    target = None
+    for root, _dirs, files in os.walk(modules_root):
+        for entry in sorted(files):
+            if entry == name or entry == f"{name}.js" or entry.startswith(name):
+                target = os.path.join(root, entry)
+                break
+        if target:
+            break
+    if target is None:
+        return ToolResult(False, error=f"no module matching {name!r} under src/modules")
+
+    try:
+        proc = subprocess.run(["node", runner, target], cwd=REPO_ROOT, capture_output=True,
+                              text=True, timeout=60)
+    except Exception as exc:
+        return ToolResult(False, error=f"{type(exc).__name__}: {exc}")
+    output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    return ToolResult(proc.returncode == 0, output=_truncate(output),
+                      error="" if proc.returncode == 0 else f"node exited {proc.returncode}",
+                      meta={"module": os.path.relpath(target, REPO_ROOT)})
+
+
+def tool_vitals() -> ToolResult:
+    """The body reading, as one spoken-style sentence plus the full data."""
+    from src.agent import embodiment
+
+    reading = embodiment.vitals()
+    return ToolResult(True, output=embodiment.summary(reading), meta=reading)
+
+
 def build_registry() -> ToolRegistry:
+    from src.agent import senses
+
     registry = ToolRegistry()
     registry.register(Tool(
         "run_shell", "Run a shell command inside the engine's container.",
@@ -218,4 +266,20 @@ def build_registry() -> ToolRegistry:
     registry.register(Tool(
         "web_fetch", "Fetch a web page and return its readable text.",
         {"url": "str", "timeout": "float seconds (optional)"}, web_fetch))
+    registry.register(Tool(
+        "vitals", "Read the agent's body: a real heartbeat burst (rhythm, bpm, energy, stress) "
+                  "plus its emotional state.", {}, tool_vitals))
+    registry.register(Tool(
+        "speak", "Say text out loud - renders a wav with the speech engine in the image; "
+                 "the dashboard plays the newest one.",
+        {"text": "str", "speed": "int words per minute (optional, default 165)",
+         "voice": "str voice name (optional)"}, senses.speak))
+    registry.register(Tool(
+        "look", "See an image (a path in the container or an http(s) URL): format, size, "
+                "brightness, dominant colours and a luminance grid.",
+        {"source": "str path or URL"}, senses.look))
+    registry.register(Tool(
+        "js_module", "List the engine's JavaScript modules, or load one with node and report "
+                     "the classes it exports and their methods.",
+        {"name": "str module name (optional - omit to list them)"}, js_module))
     return registry

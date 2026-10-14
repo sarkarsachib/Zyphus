@@ -23,11 +23,15 @@ if REPO_ROOT not in sys.path:
 
 try:
     from src.agent.loop import get_loop
+    from src.agent import control
     AGENT_IMPORT_ERROR = ""
 except Exception as _exc:  # the dashboard must still serve if the agent layer breaks
     get_loop = None
+    control = None
     AGENT_IMPORT_ERROR = f"{type(_exc).__name__}: {_exc}"
 MODULES_ROOT = os.path.join(REPO_ROOT, "src", "modules")
+VOICE_DIR = os.path.join(REPO_ROOT, "devmind", "agent", "voice")
+VOICE_FILE = re.compile(r"^voice-\d{8}-\d{6}\.wav$")
 CLI = os.path.join(REPO_ROOT, "src", "main.py")
 
 PORT = int(os.environ.get("ZYPHUS_WEB_PORT", "3000"))
@@ -100,12 +104,34 @@ def modules_payload():
 
 
 def agent_payload():
-    """Loop state, queue counts, tool catalog and recent tool calls (read-only)."""
+    """Loop state, queue counts, tool catalog, body, voice and recent calls (read-only)."""
     if get_loop is None:
         return {"available": False, "error": AGENT_IMPORT_ERROR}
     payload = get_loop().status()
     payload["available"] = True
+    payload["control"] = {"configured": bool(control and control.configured())}
     return payload
+
+
+def task_payload(body, header_token=None):
+    """Token-gated remote control: queue the operator's instructions and run them now.
+
+    The preview URL is public, so this is the only inbound endpoint that runs
+    tools, and it answers only a caller holding ZYPHUS_CONTROL_TOKEN. With no
+    token configured it refuses outright - the loop keeps running either way.
+    """
+    if get_loop is None:
+        return 503, {"error": f"Agent layer not loaded: {AGENT_IMPORT_ERROR}"}
+    if control is None or not control.configured():
+        return 503, {"error": "Remote control is off: no ZYPHUS_CONTROL_TOKEN is configured."}
+    if not control.authorized(header_token or body.get("token") or ""):
+        return 401, {"error": "Invalid or missing control token."}
+
+    instructions = str(body.get("instructions", "")).strip()
+    if not instructions:
+        return 400, {"error": "No instruction supplied."}
+    result = get_loop().submit(instructions, title=body.get("title") or None)
+    return 200, result
 
 
 def health_payload():
@@ -158,6 +184,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, modules_payload())
             elif path == "/api/agent":
                 self._send_json(200, agent_payload())
+            elif path.startswith("/api/agent/voice/"):
+                self._send_voice(path.rsplit("/", 1)[-1])
             else:
                 self._send_json(404, {"error": "Not found"})
         except subprocess.TimeoutExpired:
@@ -165,16 +193,29 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # keep the dashboard honest instead of blank
             self._send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
 
+    def _send_voice(self, name):
+        """Serve one of the agent's utterances to the browser player."""
+        full = os.path.join(VOICE_DIR, name)
+        if not VOICE_FILE.match(name) or not os.path.isfile(full):
+            self._send_json(404, {"error": "No such utterance."})
+            return
+        with open(full, "rb") as handle:
+            self._send(200, handle.read(), "audio/wav", cache=True)
+
     def do_POST(self):
         path = self.path.split("?", 1)[0]
-        if path != "/api/execute":
+        if path not in ("/api/execute", "/api/agent/task"):
             self._send_json(404, {"error": "Not found"})
             return
 
         try:
             length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length) or b"{}")
-            self._send_json(200, execute_payload(str(body.get("code", ""))))
+            if path == "/api/execute":
+                self._send_json(200, execute_payload(str(body.get("code", ""))))
+            else:
+                status, payload = task_payload(body, self.headers.get("X-Zyphus-Token"))
+                self._send_json(status, payload)
         except subprocess.TimeoutExpired:
             self._send_json(504, {"success": False, "error": "Execution timed out."})
         except Exception as exc:

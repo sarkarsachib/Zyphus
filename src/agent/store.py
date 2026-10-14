@@ -103,6 +103,24 @@ class AgentStore:
         claimed["attempts"] = claimed["attempts"] + 1
         return claimed
 
+    def claim_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Claim one named task (used by the token-gated control endpoint)."""
+        with self._lock:
+            self._recover_stale()
+            row = self._db.execute(
+                "SELECT * FROM tasks WHERE id=? AND status='pending'", (task_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            self._db.execute(
+                "UPDATE tasks SET status='running', attempts=attempts+1, updated_at=? WHERE id=?",
+                (now_iso(), task_id),
+            )
+            self._db.commit()
+            claimed = dict(row)
+        claimed["attempts"] = claimed["attempts"] + 1
+        return claimed
+
     def complete(self, task_id: str, result: str = "") -> None:
         with self._lock:
             self._db.execute(
@@ -172,11 +190,17 @@ class AgentStore:
             counts[row["status"]] = row["n"]
         return counts
 
-    def recent_actions(self, limit: int = 25) -> List[Dict[str, Any]]:
+    def recent_actions(self, limit: int = 25, tool: Optional[str] = None) -> List[Dict[str, Any]]:
         with self._lock:
-            rows = self._db.execute(
-                "SELECT * FROM actions ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
+            if tool:
+                rows = self._db.execute(
+                    "SELECT * FROM actions WHERE tool=? ORDER BY id DESC LIMIT ?",
+                    (tool, limit),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT * FROM actions ORDER BY id DESC LIMIT ?", (limit,)
+                ).fetchall()
         return [dict(r) for r in rows]
 
     def list_tasks(self, limit: int = 25) -> List[Dict[str, Any]]:

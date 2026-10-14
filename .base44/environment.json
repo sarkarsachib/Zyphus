@@ -2,5 +2,16 @@
   "previewPort": 3000,
   "healthPath": "/api/health",
   "startCommand": "docker compose -f docker-compose.base44.yml up -d",
-  "secrets": []
+  "secrets": [
+    {
+      "name": "ZYPHUS_CONTROL_TOKEN",
+      "description": "Passphrase of your choosing that arms the dashboard's 'Drive the agent' box and the POST /api/agent/task endpoint. Without it remote control refuses every request (the loop keeps running).",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "OPENAI_API_KEY",
+      "description": "Optional. An OpenAI-compatible API key; when present the agent plans with a real model (src/agent/model_brain.py) instead of the local deliberative brain.",
+      "requiredAtBoot": false
+    }
+  ]
 }
