@@ -58,3 +58,38 @@ curl -fsS -X POST -H 'Content-Type: application/json' \
 The dashboard runs `status` on load, so a broken engine shows up as `UNHEALTHY` (or as a red log panel)
 instead of a blank page. A `status` call takes ~5–10s because each CLI invocation re-initializes the
 engine from scratch.
+
+## The agent layer (`src/agent/`, stdlib only)
+
+- `tools.py` - the real tools: `run_shell`, `read_file`, `write_file`, `list_dir`, `http_request`,
+  `web_fetch`. They run inside the container with **full access by design**: no allow-lists, no path
+  restrictions, no dry run. Accountability comes from the action log instead, not from limits.
+- `store.py` - durable state in `devmind/agent/agent.db` (WAL): a task queue (claim/complete/fail with
+  retries, backoff and a lease) plus an action log of every tool call with arguments, output and duration.
+- `brain.py` - the decision maker, currently `RuleBasedBrain`. It follows explicit instructions and, when
+  the queue is empty, proposes its own inspection work. **This is the seam for a real model**: implement
+  `plan(task)` and `propose()` and pass the new brain to `AgentLoop(brain=...)`.
+- `loop.py` - one tick = claim a task, plan it, run the tools, record everything; an idle tick proposes
+  self-directed work. `get_loop()` is a process-wide singleton so the dashboard and CLI share it.
+- `cli.py` - `python src/main.py agent status|tools|tasks|run|tick|forever`.
+
+Task instruction prefixes: `shell:<command>`, `fetch:<url>`, `@tool <name> {json arguments}`, `self:*`
+for the self-directed routines. Anything else makes it look around the repo (`list_dir` + `README.md`).
+A tool argument containing `$last` is replaced with the previous call's output, which is how multi-step
+tasks chain (read a file, then write a note containing it).
+
+Running it: the loop autostarts inside the dashboard process when `ZYPHUS_AGENT_AUTOSTART=1` (set in
+compose). State is in SQLite, so a restart loses nothing - a task claimed when the process died is
+reclaimed after its lease. Pacing knobs: `ZYPHUS_AGENT_INTERVAL` (default 15s) and
+`ZYPHUS_AGENT_SELF_INTERVAL` (default 300s, how often it invents its own work).
+
+Two deliberate properties, don't "fix" them by accident:
+
+- The dashboard exposes the loop **read-only** (`GET /api/agent`). There is no inbound endpoint that
+  runs tools, because the preview URL is publicly reachable - an unauthenticated exec endpoint would let
+  anyone with the link drive the container. Add remote control only behind a token.
+- Self-directed notes accumulate in `devmind/agent/notes/`; nothing prunes them yet.
+
+Verified end to end: shell tool ran a real command in the container; a self-directed task chained
+`list_dir` → `write_file` into a note; queue and action log survived a container restart and the loop
+continued on its own.

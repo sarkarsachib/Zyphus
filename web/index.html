@@ -92,6 +92,27 @@
   }
   pre.log.ok { border-color: #1d5b55; }
   pre.log.bad { border-color: #67313a; color: #f6b8bd; }
+  .counts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .counts span {
+    border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px;
+    font-size: 12px; color: var(--muted);
+  }
+  .counts span b { color: var(--ink); font-weight: 600; }
+  .actions { display: grid; gap: 8px; margin-top: 12px; }
+  .action {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+    background: rgba(255,255,255,.02);
+    font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .action .head {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    align-items: center; justify-content: space-between;
+  }
+  .action .tool { color: var(--accent); }
+  .action.bad .tool { color: var(--bad); }
+  .action .args { color: var(--muted); margin-top: 6px; word-break: break-word; }
+  .action .out { color: #b9c7d9; margin-top: 6px; white-space: pre-wrap;
+    word-break: break-word; max-height: 130px; overflow: auto; }
   footer { margin-top: 26px; color: var(--muted); font-size: 12px; text-align: center; }
   code { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: #cbd8e8; }
 </style>
@@ -127,6 +148,17 @@
     </section>
 
     <section class="card">
+      <div class="card-head">
+        <h2>Agent loop</h2>
+        <div class="badge" id="agent-state"><span class="dot"></span><span id="agent-state-text">checking…</span></div>
+      </div>
+      <div class="counts" id="agent-counts"></div>
+      <div class="grid" id="agent-tools"></div>
+      <h2 style="margin: 22px 0 0;">Recent tool calls</h2>
+      <div class="actions" id="agent-actions"></div>
+    </section>
+
+    <section class="card">
       <h2>JavaScript modules on the bridge</h2>
       <div class="grid" id="modules"></div>
     </section>
@@ -134,7 +166,7 @@
 
   <footer>
     This dashboard drives the CLI. Terminal parity:
-    <code>docker compose exec zyphus python src/main.py status</code>
+    <code>docker compose exec zyphus python src/main.py agent status</code>
   </footer>
 </div>
 
@@ -212,8 +244,67 @@ async function runCode() {
   }
 }
 
-$("refresh").addEventListener("click", loadStatus);
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function renderAgent(data) {
+  const badge = $("agent-state");
+  const stateText = $("agent-state-text");
+  if (!data || data.available === false) {
+    badge.classList.remove("ok");
+    badge.classList.add("bad");
+    stateText.textContent = "unavailable";
+    $("agent-counts").innerHTML =
+      `<span>${escapeHtml((data && data.error) || "agent layer not loaded")}</span>`;
+    $("agent-actions").innerHTML = "";
+    return;
+  }
+
+  badge.classList.remove("ok", "bad");
+  badge.classList.add(data.running ? "ok" : "bad");
+  stateText.textContent = `${data.running ? "running" : "stopped"} · ${data.ticks} ticks`;
+
+  const q = data.queue || {};
+  $("agent-counts").innerHTML =
+    ["pending", "running", "done", "failed"]
+      .map((k) => `<span>${k} <b>${q[k] ?? 0}</b></span>`).join("") +
+    `<span>brain <b>${escapeHtml(data.brain)}</b></span>` +
+    `<span>tick every <b>${Math.round(data.interval_seconds)}s</b></span>` +
+    `<span>self-directed every <b>${Math.round(data.self_interval_seconds)}s</b></span>`;
+
+  $("agent-tools").innerHTML = (data.tools || []).map((t) =>
+    `<div class="chip" title="${escapeHtml(t.description)}">
+       <span class="name">${escapeHtml(t.name)}</span><b>tool</b>
+     </div>`).join("");
+
+  const actions = data.recent_actions || [];
+  $("agent-actions").innerHTML = actions.length
+    ? actions.map((a) => `
+      <div class="action ${a.ok ? "" : "bad"}">
+        <div class="head">
+          <span><span class="tool">${escapeHtml(a.tool)}</span> · task ${escapeHtml(a.task_id || "—")}</span>
+          <span>${a.ok ? "ok" : "failed"} · ${a.duration_ms} ms · ${escapeHtml(a.created_at)}</span>
+        </div>
+        <div class="args">${escapeHtml(JSON.stringify(a.arguments))}</div>
+        <div class="out">${escapeHtml((a.output || a.error || "").slice(0, 500))}</div>
+      </div>`).join("")
+    : '<div class="action">no tool calls recorded yet</div>';
+}
+
+async function loadAgent() {
+  try {
+    renderAgent(await (await fetch("/api/agent")).json());
+  } catch (err) {
+    renderAgent({ available: false, error: "request failed: " + err.message });
+  }
+}
+
+$("refresh").addEventListener("click", () => { loadStatus(); loadAgent(); });
 $("run").addEventListener("click", runCode);
+loadAgent();
+setInterval(loadAgent, 6000);
 loadStatus();
 fetch("/api/modules").then((r) => r.json())
   .then((d) => renderModules(d.modules || []))

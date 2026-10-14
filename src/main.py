@@ -13,6 +13,7 @@ from src.nrx_interpreter import nrx_interpreter
 from src.custom_kernel import devmind_kernel
 from src.custom_terminal import devmind_terminal
 from src.js_module_bridge_fixed import js_bridge
+from src.agent.cli import agent as agent_cli
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -60,6 +61,8 @@ def initialize_systems():
 def cli():
     """DEVmind Fusion Engine CLI"""
     pass
+
+cli.add_command(agent_cli)
 
 @cli.command()
 def init():

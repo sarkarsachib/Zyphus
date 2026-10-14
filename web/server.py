@@ -17,6 +17,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+try:
+    from src.agent.loop import get_loop
+    AGENT_IMPORT_ERROR = ""
+except Exception as _exc:  # the dashboard must still serve if the agent layer breaks
+    get_loop = None
+    AGENT_IMPORT_ERROR = f"{type(_exc).__name__}: {_exc}"
 MODULES_ROOT = os.path.join(REPO_ROOT, "src", "modules")
 CLI = os.path.join(REPO_ROOT, "src", "main.py")
 
@@ -89,6 +99,15 @@ def modules_payload():
     return {"modules": modules}
 
 
+def agent_payload():
+    """Loop state, queue counts, tool catalog and recent tool calls (read-only)."""
+    if get_loop is None:
+        return {"available": False, "error": AGENT_IMPORT_ERROR}
+    payload = get_loop().status()
+    payload["available"] = True
+    return payload
+
+
 def health_payload():
     """Cheap liveness probe: the engine source must be importable."""
     probe = subprocess.run(
@@ -137,6 +156,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, status_payload())
             elif path == "/api/modules":
                 self._send_json(200, modules_payload())
+            elif path == "/api/agent":
+                self._send_json(200, agent_payload())
             else:
                 self._send_json(404, {"error": "Not found"})
         except subprocess.TimeoutExpired:
@@ -164,6 +185,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    if get_loop is not None and os.environ.get("ZYPHUS_AGENT_AUTOSTART") == "1":
+        loop = get_loop()
+        loop.start_thread()
+        print(f"agent loop started (state: {loop.store.path})", flush=True)
+    elif AGENT_IMPORT_ERROR:
+        print(f"agent layer not loaded: {AGENT_IMPORT_ERROR}", flush=True)
+
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"Zyphus dashboard on http://0.0.0.0:{PORT} (repo: {REPO_ROOT})", flush=True)
     server.serve_forever()

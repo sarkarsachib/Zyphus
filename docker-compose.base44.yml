@@ -21,6 +21,9 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
       - ZYPHUS_WEB_PORT=3000
+      # Runs the agent loop in the dashboard process; state lives in
+      # devmind/agent/agent.db, so a restart resumes where it left off.
+      - ZYPHUS_AGENT_AUTOSTART=1
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/health >/dev/null || exit 1"]
       interval: 20s
