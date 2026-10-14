@@ -154,3 +154,20 @@ Two deliberate properties, don't "fix" them by accident:
 Verified end to end: shell tool ran a real command in the container; a self-directed task chained
 `list_dir` → `write_file` into a note; queue and action log survived a container restart and the loop
 continued on its own.
+
+## Running tests
+
+```bash
+docker compose -f docker-compose.base44.yml exec zyphus python -m pytest tests/ -v
+```
+
+36 tests cover the four core agent modules:
+- `tests/test_store.py` - task queue (enqueue/claim/complete/fail/retry), action log, counts
+- `tests/test_brain.py` - DeliberativeBrain: prefix parsing, plain-English deliberation, self-directed
+  routines, propose rotation, follow-up chaining
+- `tests/test_tools.py` - real tool handlers (shell, file I/O, list_dir) and the registry catalog
+- `tests/test_model_brain.py` - ModelBrain: JSON extraction, model-backed plan and propose, fallback on
+  failure, unknown-tool/routine rejection (all model calls are mocked)
+
+The model brain's `propose` now asks the model for self-directed work (validated against the known
+`self:*` routines) instead of always delegating to the local brain; any failure falls back as before.

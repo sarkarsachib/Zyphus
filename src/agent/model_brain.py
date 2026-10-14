@@ -25,6 +25,15 @@ SYSTEM_PROMPT = (
     'A string argument may contain "$last" to reuse the previous call\'s output.'
 )
 
+PROPOSE_PROMPT = (
+    "You are the self-directed half of an autonomous agent running inside its own code repository. "
+    "You are idle and must propose one productive thing to do next: inspect a source file, reflect on "
+    "recent work, report your body state, run a self-check, or inventory the codebase. "
+    "Reply with JSON only: {\"title\": \"<short label>\", \"instructions\": \"<one of: "
+    "self:inspect, self:reflect, self:voice, self:selftest, self:inventory>\"}. "
+    "Choose based on what the agent has been doing and its recent success rate."
+)
+
 
 class ModelBrain:
     name = "model+deliberative"
@@ -52,10 +61,47 @@ class ModelBrain:
         return calls or self.fallback.plan(task)
 
     def propose(self, context: Optional[Dict[str, Any]] = None):
-        return self.fallback.propose(context)
+        try:
+            proposal = self._ask_for_proposal(context or {})
+        except Exception:
+            self.failures += 1
+            return self.fallback.propose(context)
+        if not proposal:
+            return self.fallback.propose(context)
+        return proposal
 
     def follow_up(self, task: Dict[str, Any], outcome: Dict[str, Any]):
         return self.fallback.follow_up(task, outcome)
+
+    def _ask_for_proposal(self, context: Dict[str, Any]) -> Optional[Dict[str, str]]:
+        recent = context.get("recent_actions") or []
+        summary = [
+            f"- {a.get('tool', '?')}: {'ok' if a.get('ok') else 'failed'}"
+            for a in recent[-10:]
+        ]
+        task_lines = [
+            f"- [{t.get('status', '?')}] {t.get('title', '?')}"
+            for t in (context.get("recent_tasks") or [])[-8:]
+        ]
+        user_content = (
+            f"Recent actions:\n{chr(10).join(summary) or '(none)'}\n\n"
+            f"Recent tasks:\n{chr(10).join(task_lines) or '(none)'}\n\n"
+            f"Notes on disk: {len(context.get('notes', []))} files\n\n"
+            "Propose one self-directed task."
+        )
+        reply = self._chat([
+            {"role": "system", "content": PROPOSE_PROMPT},
+            {"role": "user", "content": user_content},
+        ])
+        payload = _extract_json(reply)
+        title = str(payload.get("title", "")).strip()
+        instructions = str(payload.get("instructions", "")).strip()
+        if not title or not instructions:
+            raise ValueError("model returned no usable proposal")
+        valid = {"self:inspect", "self:reflect", "self:voice", "self:selftest", "self:inventory"}
+        if instructions not in valid:
+            raise ValueError(f"model proposed an unknown routine: {instructions}")
+        return {"title": title[:80], "instructions": instructions}
 
     # --- the model call ------------------------------------------------------
 

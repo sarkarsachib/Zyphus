@@ -19,3 +19,7 @@ WORKDIR /app
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
+
+# pytest is a test-only dependency; installed here so `python -m pytest tests/`
+# works inside the container without a manual pip install.
+RUN pip install --no-cache-dir pytest
