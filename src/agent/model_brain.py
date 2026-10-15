@@ -27,10 +27,13 @@ SYSTEM_PROMPT = (
 
 PROPOSE_PROMPT = (
     "You are the self-directed half of an autonomous agent running inside its own code repository. "
-    "You are idle and must propose one productive thing to do next: inspect a source file, reflect on "
-    "recent work, report your body state, run a self-check, or inventory the codebase. "
+    "You are idle and must propose one productive thing to do next: inspect a source file, analyze "
+    "a module with the AST analyzer, reflect on recent work, explore a random file, report your body "
+    "state, run a self-check, inventory the codebase, dump memory, check git status, or report "
+    "system info. "
     "Reply with JSON only: {\"title\": \"<short label>\", \"instructions\": \"<one of: "
-    "self:inspect, self:reflect, self:voice, self:selftest, self:inventory>\"}. "
+    "self:inspect, self:improve, self:reflect, self:explore, self:voice, self:selftest, "
+    "self:inventory, self:remember, self:git, self:system>\"}. "
     "Choose based on what the agent has been doing and its recent success rate."
 )
 
@@ -98,7 +101,9 @@ class ModelBrain:
         instructions = str(payload.get("instructions", "")).strip()
         if not title or not instructions:
             raise ValueError("model returned no usable proposal")
-        valid = {"self:inspect", "self:reflect", "self:voice", "self:selftest", "self:inventory"}
+        valid = {"self:inspect", "self:improve", "self:reflect", "self:explore",
+                 "self:voice", "self:selftest", "self:inventory", "self:remember",
+                 "self:git", "self:system"}
         if instructions not in valid:
             raise ValueError(f"model proposed an unknown routine: {instructions}")
         return {"title": title[:80], "instructions": instructions}

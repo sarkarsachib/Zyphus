@@ -82,9 +82,37 @@ class DeliberativeBrain:
             return [ToolCall("look", {"source": rest})]
         if prefix == "say":
             return [ToolCall("speak", {"text": rest})]
+        if prefix in ("git", "git_status"):
+            return [ToolCall("git_status", {})]
+        if prefix in ("analyze", "ast"):
+            return [ToolCall("code_analyze", {"path": rest})]
+        if prefix in ("remember", "memory"):
+            return self._memory_instruction(rest)
+        if prefix in ("eval", "python", "py"):
+            return [ToolCall("python_eval", {"expression": rest})]
+        if prefix in ("sysinfo", "system"):
+            return [ToolCall("system_info", {})]
+        if prefix in ("fuse", "fusion"):
+            return [ToolCall("fuse", {"responses": rest})]
         if prefix == "self":
             return self._self_directed(rest)
         return self._deliberate(instructions)
+
+    def _memory_instruction(self, rest: str) -> List[ToolCall]:
+        """Parse 'memory: store key=value' or 'memory: recall key' or 'memory: list'."""
+        rest = (rest or "").strip()
+        if not rest or rest == "list":
+            return [ToolCall("memory", {"action": "list"})]
+        low = rest.lower()
+        if low.startswith("store ") or low.startswith("set "):
+            body = rest.split(" ", 1)[1]
+            key, _, val = body.partition("=")
+            return [ToolCall("memory", {"action": "store", "key": key.strip(), "value": val.strip()})]
+        if low.startswith("recall ") or low.startswith("get "):
+            return [ToolCall("memory", {"action": "recall", "key": rest.split(" ", 1)[1].strip()})]
+        if low.startswith("forget ") or low.startswith("delete "):
+            return [ToolCall("memory", {"action": "forget", "key": rest.split(" ", 1)[1].strip()})]
+        return [ToolCall("memory", {"action": "list"})]
 
     def _explicit_tool(self, instructions: str) -> List[ToolCall]:
         remainder = instructions[len("tool"):].lstrip(": ").strip()
@@ -107,6 +135,18 @@ class DeliberativeBrain:
 
         if any(word in low for word in ("search", "grep", "find in", "look for", "where is")):
             steps = [ToolCall("run_shell", {"command": self._grep_command(text)})]
+        elif any(word in low for word in ("git status", "git log", "git branch", "recent commit",
+                                          "what changed")):
+            steps = [ToolCall("git_status", {})]
+        elif any(word in low for word in ("analyze", "ast", "code structure", "complexity")) and path:
+            steps = [ToolCall("code_analyze", {"path": path})]
+        elif any(word in low for word in ("remember", "store in memory", "recall from memory")):
+            steps = [ToolCall("memory", {"action": "list"})]
+        elif any(word in low for word in ("system info", "cpu", "memory usage", "disk space",
+                                          "how much ram")):
+            steps = [ToolCall("system_info", {})]
+        elif any(word in low for word in ("fuse", "fusion", "combine models", "model fusion")):
+            steps = [ToolCall("fuse", {"responses": ""})]
         elif any(word in low for word in ("vitals", "pulse", "heartbeat", "your body", "how do you feel",
                                           "mood", "emotion")):
             steps = [ToolCall("vitals", {})]
@@ -237,6 +277,50 @@ class DeliberativeBrain:
                     "content": f"# Source inventory\n\nTaken at {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```\n$last\n```\n",
                 }),
             ]
+        if routine == "improve":
+            module = self._next_module()
+            self._looked_at.add(module)
+            return [
+                ToolCall("code_analyze", {"path": module}),
+                ToolCall("write_file", {
+                    "path": self._note_path("improvement"),
+                    "content": f"# Code analysis: {module}\n\nAnalyzed at {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```\n$last\n```\n",
+                }),
+            ]
+        if routine == "remember":
+            return [
+                ToolCall("memory", {"action": "list"}),
+                ToolCall("write_file", {
+                    "path": self._note_path("memory"),
+                    "content": f"# Memory dump\n\nAt {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```\n$last\n```\n",
+                }),
+            ]
+        if routine == "explore":
+            return [
+                ToolCall("run_shell", {"command":
+                          "find src -name '*.py' -not -path '*/__pycache__/*' | shuf | head -1 | "
+                          "xargs -I{} sh -c 'echo \"=== {} ===\"; head -20 {}'"}),
+                ToolCall("write_file", {
+                    "path": self._note_path("exploration"),
+                    "content": f"# Random exploration\n\nAt {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```\n$last\n```\n",
+                }),
+            ]
+        if routine == "git":
+            return [
+                ToolCall("git_status", {}),
+                ToolCall("write_file", {
+                    "path": self._note_path("git"),
+                    "content": f"# Git state\n\nAt {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```\n$last\n```\n",
+                }),
+            ]
+        if routine == "system":
+            return [
+                ToolCall("system_info", {}),
+                ToolCall("write_file", {
+                    "path": self._note_path("system"),
+                    "content": f"# System info\n\nAt {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```\n$last\n```\n",
+                }),
+            ]
 
         module = self._next_module()
         self._looked_at.add(module)
@@ -254,6 +338,11 @@ class DeliberativeBrain:
         "self:voice": "Report its body state out loud",
         "self:selftest": "Self-check the engine",
         "self:inventory": "Inventory its own source tree",
+        "self:improve": "Analyze a module with the AST code analyzer",
+        "self:remember": "Dump persistent memory and note it",
+        "self:explore": "Explore a random file in the source tree",
+        "self:git": "Check git status and recent commits",
+        "self:system": "Report system info (CPU, memory, disk)",
     }
 
     def propose(self, context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, str]]:
@@ -262,7 +351,9 @@ class DeliberativeBrain:
         recent = context.get("recent_actions") or []
         failures = sum(1 for action in recent if not action.get("ok"))
 
-        order = ["self:inspect", "self:reflect", "self:voice", "self:selftest", "self:inventory"]
+        order = ["self:inspect", "self:improve", "self:reflect", "self:explore",
+                "self:voice", "self:selftest", "self:inventory", "self:remember",
+                "self:git", "self:system"]
         if failures:
             order.insert(0, "self:selftest")  # something broke: check itself first
         elif not recent:

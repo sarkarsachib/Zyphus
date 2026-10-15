@@ -102,14 +102,16 @@ engine from scratch.
 ## The agent layer (`src/agent/`, stdlib only)
 
 - `tools.py` - the real tools: `run_shell`, `read_file`, `write_file`, `list_dir`, `http_request`,
-  `web_fetch`, plus the body and senses: `vitals`, `speak`, `look`, `js_module`. They run inside the
-  container with **full access by design**: no allow-lists, no path restrictions, no dry run.
-  Accountability comes from the action log instead, not from limits.
+  `web_fetch`, plus the body and senses: `vitals`, `speak`, `look`, `js_module`, plus the new
+  capabilities: `git_status`, `code_analyze` (AST), `memory` (SQLite key-value), `python_eval`,
+  `system_info`, `fuse` (model fusion). They run inside the container with **full access by design**:
+  no allow-lists, no path restrictions, no dry run. Accountability comes from the action log instead.
 - `store.py` - durable state in `devmind/agent/agent.db` (WAL): a task queue (claim/complete/fail with
   retries, backoff and a lease) plus an action log of every tool call with arguments, output and duration.
 - `brain.py` - the decision maker. `DeliberativeBrain` follows explicit instructions, turns plain English
   into a short chain of tool calls, and proposes its own work when the queue is empty (`self:inspect`,
-  `self:reflect`, `self:voice`, `self:selftest`, `self:inventory`); it remembers what it has already read
+  `self:reflect`, `self:voice`, `self:selftest`, `self:inventory`, `self:improve`,
+  `self:remember`, `self:explore`, `self:git`, `self:system`); it remembers what it has already read
   so its curiosity moves instead of repeating. `build_brain()` returns it, or `ModelBrain`
   (`model_brain.py`) when `OPENAI_API_KEY` is set - any model failure falls back to the local brain.
 - `loop.py` - one tick = claim a task, plan it, run the tools, record everything; an idle tick proposes
@@ -127,10 +129,16 @@ engine from scratch.
   colours and a luminance grid the agent can reason about - for JPEG it reads the frame size only and
   says so. There is no `listen()`: the container has no microphone.
 - `control.py` - the token gate for remote control (see "Deliberate properties" below).
+- `fusion.py` - the working model fusion engine (replaces the stub
+  `llm_superfusing_engine_adapter.py` that faked cognitive traits with `random.uniform`).
+  Scores model responses on real, deterministic signals (length, structure, keyword density,
+  code-block presence), fuses multiple responses by weighted consensus, and extracts cognitive
+  traits from text — no randomness, stdlib only. Used by the `fuse` tool and exposed at `GET /api/fusion`.
 - `cli.py` - `python src/main.py agent status|tools|tasks|run|tick|forever`.
 
 Task instruction prefixes: `shell:<command>`, `fetch:<url>`, `look:<image path or URL>`, `say:<text>`,
-`@tool <name> {json arguments}`, `self:*` for the self-directed routines. Anything else goes to the
+`git:`, `analyze:<path>`, `memory: store|recall|list|forget`, `eval:<expression>`, `system:`,
+`fuse:<json>`, `self:*` for the self-directed routines. Anything else goes to the
 deliberative planner, which understands plain English ("read src/x.py and write a note about it" becomes
 `read_file` then `write_file`); if it recognises nothing it looks around the repo.
 A tool argument containing `$last` is replaced with the previous call's output, which is how multi-step
@@ -161,12 +169,15 @@ continued on its own.
 docker compose -f docker-compose.base44.yml exec zyphus python -m pytest tests/ -v
 ```
 
-36 tests cover the four core agent modules:
+64 tests cover the five test suites:
 - `tests/test_store.py` - task queue (enqueue/claim/complete/fail/retry), action log, counts
-- `tests/test_brain.py` - DeliberativeBrain: prefix parsing, plain-English deliberation, self-directed
-  routines, propose rotation, follow-up chaining
+- `tests/test_brain.py` - DeliberativeBrain: prefix parsing (shell/say/git/analyze/memory/eval/system/fuse),
+  plain-English deliberation, all 10 self-directed routines, propose rotation, follow-up chaining
 - `tests/test_tools.py` - real tool handlers (shell, file I/O, list_dir) and the registry catalog
 - `tests/test_model_brain.py` - ModelBrain: JSON extraction, model-backed plan and propose, fallback on
+  failure, unknown-tool/routine rejection (all model calls are mocked)
+- `tests/test_new_tools.py` - fusion engine (trait scoring, response fusion, status), new tools
+  (git_status, code_analyze, memory store/recall, python_eval, system_info, fuse), registry coverage
   failure, unknown-tool/routine rejection (all model calls are mocked)
 
 The model brain's `propose` now asks the model for self-directed work (validated against the known

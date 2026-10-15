@@ -242,6 +242,201 @@ def tool_vitals() -> ToolResult:
     return ToolResult(True, output=embodiment.summary(reading), meta=reading)
 
 
+# --- git ---------------------------------------------------------------------
+
+def git_status() -> ToolResult:
+    """Git branch, status summary and last 5 commits."""
+    branch = run_shell("git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'no-git'")
+    log = run_shell("git log --oneline -5 2>/dev/null || true")
+    status = run_shell("git status --short 2>/dev/null | head -30")
+    out = f"branch: {branch.output}\n\ncommits:\n{log.output}\n\nstatus:\n{status.output or '(clean)'}"
+    return ToolResult(True, output=_truncate(out))
+
+
+# --- code analysis (stdlib ast) ----------------------------------------------
+
+def code_analyze(path: str) -> ToolResult:
+    """AST-based analysis of a Python file: functions, classes, imports, complexity."""
+    import ast as _ast
+
+    full = _resolve(path)
+    if not os.path.isfile(full):
+        return ToolResult(False, error=f"not a file: {full}")
+    source = read_file(path).output
+    try:
+        tree = _ast.parse(source)
+    except SyntaxError as exc:
+        return ToolResult(False, error=f"cannot parse: {exc}")
+
+    funcs, classes, imports = [], [], []
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.FunctionDef):
+            args = [a.arg for a in node.args.args]
+            funcs.append(f"  def {node.name}({', '.join(args)})  [line {node.lineno}]")
+        elif isinstance(node, _ast.ClassDef):
+            methods = [n.name for n in node.body if isinstance(n, _ast.FunctionDef)]
+            classes.append(f"  class {node.name}  [line {node.lineno}, {len(methods)} methods]")
+        elif isinstance(node, (_ast.Import, _ast.ImportFrom)):
+            if isinstance(node, _ast.ImportFrom):
+                imports.append(f"  from {node.module or '.'} import ...")
+            else:
+                for alias in node.names:
+                    imports.append(f"  import {alias.name}")
+
+    # McCabe-ish complexity: count branching nodes
+    branches = sum(1 for n in _ast.walk(tree)
+                   if isinstance(n, (_ast.If, _ast.For, _ast.While, _ast.ExceptHandler,
+                                     _ast.BoolOp)))
+    lines = source.count("\n") + 1
+
+    out = (f"file: {path}  ({lines} lines, complexity {branches})\n\n"
+           f"imports ({len(imports)}):\n" + "\n".join(imports) + "\n\n"
+           f"classes ({len(classes)}):\n" + "\n".join(classes) + "\n\n"
+           f"functions ({len(funcs)}):\n" + "\n".join(funcs))
+    return ToolResult(True, output=_truncate(out),
+                      meta={"lines": lines, "branches": branches,
+                            "functions": len(funcs), "classes": len(classes)})
+
+
+# --- memory (key-value SQLite) -----------------------------------------------
+
+MEMORY_DB = os.path.join(REPO_ROOT, "devmind", "agent", "memory.db")
+
+
+def _memory_db():
+    import sqlite3
+    os.makedirs(os.path.dirname(MEMORY_DB), exist_ok=True)
+    conn = sqlite3.connect(MEMORY_DB, timeout=10)
+    conn.execute("CREATE TABLE IF NOT EXISTS memory "
+                 "(key TEXT PRIMARY KEY, value TEXT, tag TEXT, created_at TEXT)")
+    conn.commit()
+    return conn
+
+
+def memory(action: str = "list", key: str = "", value: str = "", tag: str = "") -> ToolResult:
+    """Persistent key-value memory: store, recall, list, or forget."""
+    import time as _time
+    conn = _memory_db()
+    action = (action or "list").strip().lower()
+
+    if action in ("store", "set", "save"):
+        if not key:
+            return ToolResult(False, error="store requires a key")
+        conn.execute("INSERT OR REPLACE INTO memory (key, value, tag, created_at) VALUES (?,?,?,?)",
+                     (key, value, tag, _time.strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit()
+        return ToolResult(True, output=f"remembered: {key}")
+
+    if action in ("recall", "get", "read"):
+        if not key:
+            return ToolResult(False, error="recall requires a key")
+        row = conn.execute("SELECT value, tag, created_at FROM memory WHERE key=?", (key,)).fetchone()
+        if not row:
+            return ToolResult(False, error=f"no memory for key: {key}")
+        return ToolResult(True, output=row[0], meta={"key": key, "tag": row[1], "created_at": row[2]})
+
+    if action in ("forget", "delete", "del"):
+        if not key:
+            return ToolResult(False, error="forget requires a key")
+        conn.execute("DELETE FROM memory WHERE key=?", (key,))
+        conn.commit()
+        return ToolResult(True, output=f"forgot: {key}")
+
+    # default: list
+    rows = conn.execute("SELECT key, tag, created_at FROM memory ORDER BY created_at DESC LIMIT 50").fetchall()
+    if not rows:
+        return ToolResult(True, output="(memory is empty)")
+    out = "\n".join(f"  {r[0]:30s}  [{r[1] or '-'}]  {r[2]}" for r in rows)
+    return ToolResult(True, output=f"memory ({len(rows)} entries):\n{out}",
+                      meta={"count": len(rows)})
+
+
+# --- python eval (safe expression) -------------------------------------------
+
+def python_eval(expression: str) -> ToolResult:
+    """Evaluate a Python expression and return the result."""
+    expression = (expression or "").strip()
+    if not expression:
+        return ToolResult(False, error="no expression")
+    try:
+        result = eval(expression, {"__builtins__": __builtins__}, {})
+        return ToolResult(True, output=_truncate(str(result)),
+                          meta={"type": type(result).__name__})
+    except Exception as exc:
+        return ToolResult(False, error=f"{type(exc).__name__}: {exc}")
+
+
+# --- system info -------------------------------------------------------------
+
+def system_info() -> ToolResult:
+    """OS, CPU, memory and disk information for the container."""
+    import platform
+    info = {
+        "os": platform.platform(),
+        "python": platform.python_version(),
+        "cpu_count": os.cpu_count(),
+    }
+    try:
+        load = os.getloadavg()
+        info["load_avg"] = f"{load[0]:.2f}, {load[1]:.2f}, {load[2]:.2f}"
+    except (OSError, AttributeError):
+        pass
+    # memory from /proc/meminfo (Linux)
+    try:
+        with open("/proc/meminfo") as f:
+            memlines = {}
+            for line in f:
+                k, _, v = line.partition(":")
+                memlines[k.strip()] = v.strip()
+        info["memory_total"] = memlines.get("MemTotal", "?")
+        info["memory_free"] = memlines.get("MemFree", "?")
+        info["memory_available"] = memlines.get("MemAvailable", "?")
+    except Exception:
+        pass
+    # disk
+    try:
+        st = os.statvfs("/")
+        gb = 1024 ** 3
+        info["disk_total_gb"] = round(st.f_blocks * st.f_frsize / gb, 1)
+        info["disk_free_gb"] = round(st.f_bavail * st.f_frsize / gb, 1)
+    except Exception:
+        pass
+    out = "\n".join(f"  {k}: {v}" for k, v in info.items())
+    return ToolResult(True, output=f"system info:\n{out}", meta=info)
+
+
+# --- model fusion ------------------------------------------------------------
+
+def fuse_tool(responses: str = "") -> ToolResult:
+    """Fuse multiple model responses. Pass a JSON array of {source, response} objects."""
+    from src.agent.fusion import FusionEngine
+
+    if not responses:
+        engine = FusionEngine()
+        return ToolResult(True, output="fusion engine ready. Pass a JSON array of "
+                                        '{"source": "...", "response": "..."} objects.',
+                          meta=engine.status())
+
+    try:
+        data = json.loads(responses)
+    except ValueError as exc:
+        return ToolResult(False, error=f"invalid JSON: {exc}")
+
+    if not isinstance(data, list):
+        return ToolResult(False, error="expected a JSON array of response objects")
+
+    engine = FusionEngine()
+    result = engine.fuse(data)
+    if "error" in result:
+        return ToolResult(False, error=result["error"])
+    out = (f"winner: {result['winner']} (weight {result['winner_weight']})\n"
+           f"algorithm: {result['algorithm']}\n"
+           f"blended traits: {json.dumps(result['blended_traits'])}\n\n"
+           f"fused output:\n{result['fused'][:2000]}")
+    return ToolResult(True, output=_truncate(out),
+                      meta={"cores": len(result["cores"]), "fusions": engine.fusions})
+
+
 def build_registry() -> ToolRegistry:
     from src.agent import senses
 
@@ -282,4 +477,26 @@ def build_registry() -> ToolRegistry:
         "js_module", "List the engine's JavaScript modules, or load one with node and report "
                      "the classes it exports and their methods.",
         {"name": "str module name (optional - omit to list them)"}, js_module))
+    registry.register(Tool(
+        "git_status", "Show the current git branch, recent commits and working-tree status.",
+        {}, git_status))
+    registry.register(Tool(
+        "code_analyze", "AST-analyze a Python file: functions, classes, imports, complexity.",
+        {"path": "str path to a .py file"}, code_analyze))
+    registry.register(Tool(
+        "memory", "Persistent key-value memory: store, recall, list, or forget entries.",
+        {"action": "str: store|recall|list|forget (optional, default list)",
+         "key": "str (required for store/recall/forget)",
+         "value": "str (required for store)",
+         "tag": "str optional label"}, memory))
+    registry.register(Tool(
+        "python_eval", "Evaluate a Python expression and return the result.",
+        {"expression": "str Python expression"}, python_eval))
+    registry.register(Tool(
+        "system_info", "OS, CPU, memory and disk information for the container.",
+        {}, system_info))
+    registry.register(Tool(
+        "fuse", "Fuse multiple model responses into one. Pass a JSON array of "
+                '{"source": "...", "response": "..."} objects, or omit for status.',
+        {"responses": "str JSON array (optional)"}, fuse_tool))
     return registry

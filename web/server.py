@@ -151,6 +151,35 @@ def health_payload():
     }
 
 
+def memory_payload():
+    """List the agent's persistent key-value memory (read-only)."""
+    import sqlite3
+    mem_db = os.path.join(REPO_ROOT, "devmind", "agent", "memory.db")
+    if not os.path.isfile(mem_db):
+        return {"entries": []}
+    try:
+        conn = sqlite3.connect(mem_db, timeout=5)
+        rows = conn.execute(
+            "SELECT key, value, tag, created_at FROM memory ORDER BY created_at DESC LIMIT 100"
+        ).fetchall()
+        conn.close()
+        return {"entries": [
+            {"key": r[0], "value": r[1][:500], "tag": r[2], "created_at": r[3]}
+            for r in rows
+        ]}
+    except Exception as exc:
+        return {"entries": [], "error": str(exc)}
+
+
+def fusion_payload():
+    """Status of the model fusion engine."""
+    try:
+        from src.agent.fusion import FusionEngine
+        return FusionEngine().status()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ZyphusDashboard"
 
@@ -184,6 +213,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, modules_payload())
             elif path == "/api/agent":
                 self._send_json(200, agent_payload())
+            elif path == "/api/agent/memory":
+                self._send_json(200, memory_payload())
+            elif path == "/api/fusion":
+                self._send_json(200, fusion_payload())
             elif path.startswith("/api/agent/voice/"):
                 self._send_voice(path.rsplit("/", 1)[-1])
             else:

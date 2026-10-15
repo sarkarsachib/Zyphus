@@ -53,6 +53,74 @@ def test_self_inspect():
     assert calls[1].tool == "write_file"
 
 
+def test_self_improve():
+    calls = _brain().plan({"instructions": "self:improve"})
+    assert len(calls) == 2
+    assert calls[0].tool == "code_analyze"
+    assert calls[1].tool == "write_file"
+
+
+def test_self_explore():
+    calls = _brain().plan({"instructions": "self:explore"})
+    assert len(calls) == 2
+    assert calls[0].tool == "run_shell"
+    assert calls[1].tool == "write_file"
+
+
+def test_self_remember():
+    calls = _brain().plan({"instructions": "self:remember"})
+    assert len(calls) == 2
+    assert calls[0].tool == "memory"
+    assert calls[1].tool == "write_file"
+
+
+def test_self_git():
+    calls = _brain().plan({"instructions": "self:git"})
+    assert len(calls) == 2
+    assert calls[0].tool == "git_status"
+    assert calls[1].tool == "write_file"
+
+
+def test_self_system():
+    calls = _brain().plan({"instructions": "self:system"})
+    assert len(calls) == 2
+    assert calls[0].tool == "system_info"
+    assert calls[1].tool == "write_file"
+
+
+def test_git_prefix():
+    calls = _brain().plan({"instructions": "git: status"})
+    assert len(calls) == 1
+    assert calls[0].tool == "git_status"
+
+
+def test_analyze_prefix():
+    calls = _brain().plan({"instructions": "analyze: src/agent/brain.py"})
+    assert len(calls) == 1
+    assert calls[0].tool == "code_analyze"
+
+
+def test_memory_prefix_store():
+    calls = _brain().plan({"instructions": "memory: store key1=value1"})
+    assert len(calls) == 1
+    assert calls[0].tool == "memory"
+    assert calls[0].arguments["action"] == "store"
+    assert calls[0].arguments["key"] == "key1"
+    assert calls[0].arguments["value"] == "value1"
+
+
+def test_eval_prefix():
+    calls = _brain().plan({"instructions": "eval: 2 + 2"})
+    assert len(calls) == 1
+    assert calls[0].tool == "python_eval"
+
+
+def test_system_prefix():
+    calls = _brain().plan({"instructions": "system: info"})
+    assert len(calls) == 1
+    assert calls[0].tool == "system_info"
+
+
 def test_propose_returns_routine():
     brain = _brain()
     proposal = brain.propose({"recent_actions": [{"ok": True}], "recent_tasks": []})
