@@ -94,6 +94,14 @@ class DeliberativeBrain:
             return [ToolCall("system_info", {})]
         if prefix in ("fuse", "fusion"):
             return [ToolCall("fuse", {"responses": rest})]
+        if prefix in ("rag", "index", "retrieve"):
+            return self._rag_instruction(rest)
+        if prefix in ("model", "models", "llm"):
+            return self._model_instruction(rest)
+        if prefix in ("api", "apis", "endpoint"):
+            return self._api_instruction(rest)
+        if prefix in ("connector", "connectors", "connect", "hook"):
+            return self._connector_instruction(rest)
         if prefix == "self":
             return self._self_directed(rest)
         return self._deliberate(instructions)
@@ -114,6 +122,96 @@ class DeliberativeBrain:
             return [ToolCall("memory", {"action": "forget", "key": rest.split(" ", 1)[1].strip()})]
         return [ToolCall("memory", {"action": "list"})]
 
+    def _rag_instruction(self, rest: str) -> List[ToolCall]:
+        """Parse 'rag: index src', 'rag: stats', 'rag: sources', 'rag: <question>'."""
+        rest = (rest or "").strip()
+        low = rest.lower()
+        if not rest or low in ("stats", "status"):
+            return [ToolCall("rag", {"action": "stats"})]
+        if low in ("sources", "list", "files"):
+            return [ToolCall("rag", {"action": "sources"})]
+        if low.startswith("forget ") or low.startswith("clear ") or low.startswith("delete "):
+            return [ToolCall("rag", {"action": "forget", "source": rest.split(" ", 1)[1].strip()})]
+        if low.startswith("index") or low.startswith("ingest"):
+            target = rest.split(" ", 1)[1].strip() if " " in rest else "."
+            tag = ""
+            if " into " in target:
+                target, _, tag = target.partition(" into ")
+            return [ToolCall("rag", {"action": "index", "path": target.strip() or ".",
+                                     "source": tag.strip()})]
+        if low.startswith("query ") or low.startswith("search ") or low.startswith("find "):
+            return [ToolCall("rag", {"action": "query", "text": rest.split(" ", 1)[1].strip()})]
+        return [ToolCall("rag", {"action": "query", "text": rest})]
+
+    def _model_instruction(self, rest: str) -> List[ToolCall]:
+        """Parse 'model: list', 'model: add <name> <base_url> <model> [key_env]', 'model: use <name>'."""
+        rest = (rest or "").strip()
+        verb, _, arg = rest.partition(" ")
+        verb, arg = verb.lower(), arg.strip()
+        if verb == "add" or verb == "set" or verb == "configure":
+            parts = arg.split()
+            if not parts:
+                return [ToolCall("model", {"action": "list"})]
+            return [ToolCall("model", {
+                "action": "add",
+                "name": parts[0],
+                "base_url": parts[1] if len(parts) > 1 else "",
+                "model": parts[2] if len(parts) > 2 else "",
+                "api_key_env": parts[3] if len(parts) > 3 else "OPENAI_API_KEY",
+            })]
+        if verb in ("use", "activate", "switch", "select"):
+            return [ToolCall("model", {"action": "use", "name": arg})]
+        if verb in ("test", "probe", "check"):
+            return [ToolCall("model", {"action": "test", "name": arg})]
+        if verb in ("remove", "delete"):
+            return [ToolCall("model", {"action": "remove", "name": arg})]
+        return [ToolCall("model", {"action": "list"})]
+
+    def _api_instruction(self, rest: str) -> List[ToolCall]:
+        """Parse 'api: list', 'api: register <name> <base_url> [key_env]', 'api: call <name> <path> [method]'."""
+        rest = (rest or "").strip()
+        verb, _, arg = rest.partition(" ")
+        verb, arg = verb.lower(), arg.strip()
+        if verb in ("register", "add", "set"):
+            parts = arg.split()
+            if not parts:
+                return [ToolCall("api", {"action": "list"})]
+            return [ToolCall("api", {"action": "register", "name": parts[0],
+                                     "base_url": parts[1] if len(parts) > 1 else "",
+                                     "auth_env": parts[2] if len(parts) > 2 else ""})]
+        if verb in ("remove", "delete"):
+            return [ToolCall("api", {"action": "remove", "name": arg})]
+        if verb in ("call", "request", "invoke"):
+            parts = arg.split()
+            if not parts:
+                return [ToolCall("api", {"action": "list"})]
+            return [ToolCall("api", {"action": "call", "name": parts[0],
+                                     "path": parts[1] if len(parts) > 1 else "",
+                                     "method": parts[2].upper() if len(parts) > 2 else "GET"})]
+        return [ToolCall("api", {"action": "list"})]
+
+    def _connector_instruction(self, rest: str) -> List[ToolCall]:
+        """Parse 'connector: add <name> <kind> <url>', 'connector: test <name>', 'connector: send <name> <text>'."""
+        rest = (rest or "").strip()
+        verb, _, arg = rest.partition(" ")
+        verb, arg = verb.lower(), arg.strip()
+        if verb in ("add", "register", "set"):
+            parts = arg.split()
+            if not parts:
+                return [ToolCall("connector", {"action": "list"})]
+            return [ToolCall("connector", {"action": "add", "name": parts[0],
+                                           "kind": parts[1] if len(parts) > 1 else "webhook",
+                                           "url": parts[2] if len(parts) > 2 else ""})]
+        if verb in ("remove", "delete"):
+            return [ToolCall("connector", {"action": "remove", "name": arg})]
+        if verb in ("test", "probe", "check"):
+            return [ToolCall("connector", {"action": "test", "name": arg})]
+        if verb in ("send", "post", "notify"):
+            name, _, message = arg.partition(" ")
+            return [ToolCall("connector", {"action": "send", "name": name,
+                                           "message": message.strip()})]
+        return [ToolCall("connector", {"action": "list"})]
+
     def _explicit_tool(self, instructions: str) -> List[ToolCall]:
         remainder = instructions[len("tool"):].lstrip(": ").strip()
         name, _, raw_args = remainder.partition(" ")
@@ -133,7 +231,16 @@ class DeliberativeBrain:
         note_wanted = any(word in low for word in ("note", "write", "save", "record", "document"))
         steps: List[ToolCall]
 
-        if any(word in low for word in ("search", "grep", "find in", "look for", "where is")):
+        if any(word in low for word in ("rag", "retrieval index", "semantic search", "index the",
+                                        "search the index", "retrieve from")):
+            steps = self._rag_instruction(text)
+        elif any(word in low for word in ("connector", "webhook", "slack", "custom api",
+                                          "registered api", "api registry")):
+            steps = [ToolCall("api" if "api" in low else "connector", {"action": "list"})]
+        elif any(word in low for word in ("which model", "model config", "switch model",
+                                          "model endpoint", "what model")):
+            steps = [ToolCall("model", {"action": "list"})]
+        elif any(word in low for word in ("search", "grep", "find in", "look for", "where is")):
             steps = [ToolCall("run_shell", {"command": self._grep_command(text)})]
         elif any(word in low for word in ("git status", "git log", "git branch", "recent commit",
                                           "what changed")):
@@ -321,6 +428,14 @@ class DeliberativeBrain:
                     "content": f"# System info\n\nAt {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```\n$last\n```\n",
                 }),
             ]
+        if routine == "index":
+            return [
+                ToolCall("rag", {"action": "index", "path": "src"}),
+                ToolCall("write_file", {
+                    "path": self._note_path("index"),
+                    "content": f"# Retrieval index\n\nRebuilt at {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```\n$last\n```\n",
+                }),
+            ]
 
         module = self._next_module()
         self._looked_at.add(module)
@@ -343,6 +458,7 @@ class DeliberativeBrain:
         "self:explore": "Explore a random file in the source tree",
         "self:git": "Check git status and recent commits",
         "self:system": "Report system info (CPU, memory, disk)",
+        "self:index": "Rebuild its retrieval index over its own source",
     }
 
     def propose(self, context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, str]]:
@@ -353,7 +469,7 @@ class DeliberativeBrain:
 
         order = ["self:inspect", "self:improve", "self:reflect", "self:explore",
                 "self:voice", "self:selftest", "self:inventory", "self:remember",
-                "self:git", "self:system"]
+                "self:git", "self:system", "self:index"]
         if failures:
             order.insert(0, "self:selftest")  # something broke: check itself first
         elif not recent:

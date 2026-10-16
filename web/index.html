@@ -215,6 +215,7 @@ code { font-family: ui-monospace, monospace; color: #b8c8dc; }
   <button class="tab" data-tab="agent">Agent</button>
   <button class="tab" data-tab="console">Console</button>
   <button class="tab" data-tab="tools">Tools</button>
+  <button class="tab" data-tab="caps">Capabilities</button>
   <button class="tab" data-tab="memory">Memory</button>
   <button class="tab" data-tab="fusion">Fusion</button>
   <button class="tab" data-tab="body">Body & Voice</button>
@@ -299,6 +300,37 @@ code { font-family: ui-monospace, monospace; color: #b8c8dc; }
   <div class="panel">
     <div class="panel-head"><h2>JS Modules on Bridge</h2></div>
     <div class="grid" id="modules"></div>
+  </div>
+</div>
+
+<!-- ═══ CAPABILITIES ═══ -->
+<div class="section" id="sec-caps">
+  <div class="panel">
+    <div class="panel-head"><h2>Model Endpoints</h2><button class="ghost" id="caps-refresh">Refresh</button></div>
+    <div class="pills" id="model-pills"></div>
+    <div class="grid" id="model-list" style="grid-template-columns:1fr;margin-top:10px"></div>
+    <p class="hint" style="margin-top:8px">Add one through the agent:
+      <code>model: add main https://api.openai.com/v1 gpt-4o-mini OPENAI_API_KEY</code></p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>Custom APIs</h2><span class="hint" id="api-count"></span></div>
+    <div class="grid" id="api-list" style="grid-template-columns:1fr"></div>
+    <p class="hint" style="margin-top:8px"><code>api: register weather https://api.example.com WEATHER_KEY</code>
+      · <code>api: call weather /v1/forecast GET</code></p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>Connectors</h2><span class="hint" id="conn-count"></span></div>
+    <div class="grid" id="conn-list" style="grid-template-columns:1fr"></div>
+    <pre class="log" id="caps-log">Probe a connector to see whether it answers…</pre>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>Retrieval Index</h2><span class="hint" id="rag-stats"></span></div>
+    <div class="row">
+      <input id="rag-query" class="input" placeholder="ask the indexed corpus…" style="flex:1 1 220px" />
+      <button class="primary" id="rag-search">Search</button>
+      <button class="ghost" id="rag-index">Index src/</button>
+    </div>
+    <pre class="log" id="rag-out">Index a path, then ask it something…</pre>
   </div>
 </div>
 
@@ -504,7 +536,9 @@ $("run-eval").addEventListener("click", async () => {
 /* ── drive the agent ── */
 const TASK_EXAMPLES = ["vitals","say: I am Zyphus, autonomous and running.",
   "read src/agent/brain.py and write a note about it","self:improve","self:explore",
-  "git: status","analyze: src/agent/fusion.py","memory: list","system: info"];
+  "git: status","analyze: src/agent/fusion.py","memory: list","system: info",
+  "rag: index src","rag: how does the loop pace itself?","model: list",
+  "api: list","connector: list"];
 $("task-examples").innerHTML = TASK_EXAMPLES.map(e=>`<button>${esc(e)}</button>`).join("");
 document.querySelectorAll("#task-examples button").forEach((b,i)=>b.addEventListener("click",()=>$("task").value=TASK_EXAMPLES[i]));
 $("submit-task").addEventListener("click", async () => {
@@ -585,9 +619,71 @@ async function loadModules() {
 /* ── voice ── */
 $("play-voice").addEventListener("click", () => { const a = $("voice-audio"); if (a.src) a.play(); });
 
+/* ── capabilities ── */
+async function runTool(name, args, out) {
+  out.className = "log"; out.textContent = "Running " + name + "…";
+  try {
+    const d = await (await fetch("/api/agent/task",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({instructions:"tool "+name+" "+JSON.stringify(args), token:$("token").value})})).json();
+    if (d.error) { out.className="log bad"; out.textContent = d.error + " — the task box needs the control token."; return; }
+    out.className = "log " + (d.action === "executed" ? "ok" : "bad");
+    out.textContent = d.output || d.error || JSON.stringify(d,null,2);
+    loadCaps();
+  } catch(e) { out.className="log bad"; out.textContent = "Error: "+e.message; }
+}
+
+async function loadCaps() {
+  try {
+    const d = await (await fetch("/api/capabilities")).json();
+    if (d.error) throw new Error(d.error);
+
+    const models = d.models || [];
+    $("model-pills").innerHTML = `<span>active <b>${esc(d.active_model || "env default")}</b></span>`
+      + `<span>configured <b>${models.length}</b></span>`;
+    $("model-list").innerHTML = models.length ? models.map(m => `
+      <div class="tool-card">
+        <div class="tn">${esc(m.name)}${m.active?" · active":""}</div>
+        <div class="td">${esc(m.model || "(model unnamed)")} · ${esc(m.base_url || "(built-in base url)")}</div>
+        <div class="params">key ${esc(m.key_env || "—")}: ${m.key_present ? "present" : "not set"}</div>
+      </div>`).join("") : '<div class="action"><span class="hint">none configured — the local brain is planning</span></div>';
+
+    const apis = d.apis || [];
+    $("api-count").textContent = `${apis.length} registered`;
+    $("api-list").innerHTML = apis.length ? apis.map(a => `
+      <div class="tool-card">
+        <div class="tn">${esc(a.name)}</div>
+        <div class="td">${esc(a.base_url || "(no base url)")}${a.description ? " · "+esc(a.description) : ""}</div>
+        <div class="params">key ${esc(a.key_env || "—")}: ${a.key_present ? "present" : "not set"}</div>
+      </div>`).join("") : '<div class="action"><span class="hint">no custom APIs registered yet</span></div>';
+
+    const conns = d.connectors || [];
+    $("conn-count").textContent = `${conns.length} connectors`;
+    $("conn-list").innerHTML = conns.length ? conns.map(c => `
+      <div class="tool-card">
+        <div class="tn">${esc(c.name)} <span class="hint">${esc(c.kind)}</span></div>
+        <div class="td">${esc(c.url || ("url from " + (c.key_env || "the environment")))}</div>
+        <div class="params">credential ${esc(c.key_env || "—")}: ${c.key_present ? "present" : "not set"}</div>
+        <button class="ghost" data-conn="${esc(c.name)}" style="margin-top:6px">Probe</button>
+      </div>`).join("") : '<div class="action"><span class="hint">no connectors yet</span></div>';
+    document.querySelectorAll("[data-conn]").forEach(b => b.addEventListener("click",
+      () => runTool("connector", {action:"test", name:b.dataset.conn}, $("caps-log"))));
+
+    const rag = d.rag || {}, sources = d.sources || [];
+    $("rag-stats").textContent = `${rag.documents||0} sources · ${rag.chunks||0} chunks`
+      + (sources.length ? " · "+sources.slice(0,2).join(", ")+(sources.length>2?" …":"") : "");
+  } catch(e) { $("model-pills").innerHTML = `<span>${esc(e.message)}</span>`; }
+}
+
+$("caps-refresh").addEventListener("click", loadCaps);
+$("rag-search").addEventListener("click", () => {
+  const text = $("rag-query").value.trim(); if (!text) return;
+  runTool("rag", {action:"query", text:text, top_k:5}, $("rag-out"));
+});
+$("rag-index").addEventListener("click", () => runTool("rag", {action:"index", path:"src"}, $("rag-out")));
+
 /* ── init ── */
 $("refresh").addEventListener("click", loadStatus);
-loadStatus(); loadAgent(); loadModules(); loadMemory(); loadFusion();
+loadStatus(); loadAgent(); loadModules(); loadMemory(); loadFusion(); loadCaps();
 setInterval(loadAgent, 15000);
 </script>
 </body>

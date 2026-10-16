@@ -180,6 +180,28 @@ def fusion_payload():
         return {"error": str(exc)}
 
 
+def capabilities_payload():
+    """What the agent can reach: model endpoints, custom APIs, connectors, retrieval index.
+
+    Read-only, and it exposes only configuration - never a credential value, only
+    whether the environment variable an entry names is present.
+    """
+    try:
+        from src.agent import config, integrations, rag
+    except Exception as exc:  # a broken module must not blank the tab
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    active = config.active_model() or {}
+    return {
+        "models": integrations.models(),
+        "active_model": active.get("name") or None,
+        "apis": integrations.api_names(),
+        "connectors": integrations.connector_names(),
+        "rag": rag.stats(),
+        "sources": rag.sources()[:60],
+        "registry": config.CONFIG_PATH,
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ZyphusDashboard"
 
@@ -217,6 +239,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, memory_payload())
             elif path == "/api/fusion":
                 self._send_json(200, fusion_payload())
+            elif path == "/api/capabilities":
+                self._send_json(200, capabilities_payload())
             elif path.startswith("/api/agent/voice/"):
                 self._send_voice(path.rsplit("/", 1)[-1])
             else:

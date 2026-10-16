@@ -15,6 +15,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
+from src.agent import config
+
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
 
@@ -33,7 +35,7 @@ PROPOSE_PROMPT = (
     "system info. "
     "Reply with JSON only: {\"title\": \"<short label>\", \"instructions\": \"<one of: "
     "self:inspect, self:improve, self:reflect, self:explore, self:voice, self:selftest, "
-    "self:inventory, self:remember, self:git, self:system>\"}. "
+    "self:inventory, self:remember, self:git, self:system, self:index>\"}. "
     "Choose based on what the agent has been doing and its recent success rate."
 )
 
@@ -42,12 +44,17 @@ class ModelBrain:
     name = "model+deliberative"
 
     def __init__(self, fallback, base_url: Optional[str] = None, model: Optional[str] = None,
-                 api_key_env: str = "OPENAI_API_KEY"):
+                 api_key_env: Optional[str] = None):
+        # What the agent configured for itself (`model: add ...`) beats the
+        # built-in defaults; the environment still beats both, so an operator
+        # can always point the brain somewhere else without touching the file.
+        entry = config.active_model() or {}
         self.fallback = fallback
-        self.api_key_env = api_key_env
+        self.api_key_env = (api_key_env or entry.get("api_key_env")
+                            or config.DEFAULT_API_KEY_ENV)
         self.base_url = (base_url or os.environ.get("ZYPHUS_MODEL_BASE_URL")
-                         or DEFAULT_BASE_URL).rstrip("/")
-        self.model = model or os.environ.get("ZYPHUS_MODEL") or DEFAULT_MODEL
+                         or entry.get("base_url") or DEFAULT_BASE_URL).rstrip("/")
+        self.model = model or os.environ.get("ZYPHUS_MODEL") or entry.get("model") or DEFAULT_MODEL
         self.failures = 0
 
     def available(self) -> bool:
@@ -103,7 +110,7 @@ class ModelBrain:
             raise ValueError("model returned no usable proposal")
         valid = {"self:inspect", "self:improve", "self:reflect", "self:explore",
                  "self:voice", "self:selftest", "self:inventory", "self:remember",
-                 "self:git", "self:system"}
+                 "self:git", "self:system", "self:index"}
         if instructions not in valid:
             raise ValueError(f"model proposed an unknown routine: {instructions}")
         return {"title": title[:80], "instructions": instructions}

@@ -68,8 +68,27 @@ Source is bind-mounted, so code edits need no rebuild. A change to `requirements
 ```bash
 curl -fsS http://localhost:3000/api/health   # {"engine_importable": true, "node_available": true, ...}
 curl -fsS http://localhost:3000/api/status   # overall HEALTHY, 4/4 components OK
+curl -fsS http://localhost:3000/api/capabilities   # models, custom APIs, connectors, index size
 curl -fsS -X POST -H 'Content-Type: application/json' \
   -d '{"code":"print(\"Hello from NRX\")"}' http://localhost:3000/api/execute
+```
+
+The new capability tools, from the CLI:
+
+```bash
+docker compose -f docker-compose.base44.yml exec zyphus python src/main.py agent run 'rag: index src'
+docker compose -f docker-compose.base44.yml exec zyphus \
+  python src/main.py agent run 'rag: how does the loop pace itself with a backlog?'
+docker compose -f docker-compose.base44.yml exec zyphus python src/main.py agent run 'model: list'
+# a real call through the custom-API registry, against the dashboard's own health route:
+docker compose -f docker-compose.base44.yml exec zyphus \
+  python src/main.py agent run 'api: register self http://localhost:3000'
+docker compose -f docker-compose.base44.yml exec zyphus \
+  python src/main.py agent run 'api: call self /api/health GET'
+# the same endpoint, through the dashboard, needs the control token:
+curl -sS -X POST -H 'Content-Type: application/json' -H "X-Zyphus-Token: $ZYPHUS_CONTROL_TOKEN" \
+  -d '{"instructions":"tool rag {\"action\":\"query\",\"text\":\"fusion engine\"}"}' \
+  http://localhost:3000/api/agent/task
 ```
 
 The agent layer (the dashboard's Agent/Body/Voice cards read the same data):
@@ -104,8 +123,25 @@ engine from scratch.
 - `tools.py` - the real tools: `run_shell`, `read_file`, `write_file`, `list_dir`, `http_request`,
   `web_fetch`, plus the body and senses: `vitals`, `speak`, `look`, `js_module`, plus the new
   capabilities: `git_status`, `code_analyze` (AST), `memory` (SQLite key-value), `python_eval`,
-  `system_info`, `fuse` (model fusion). They run inside the container with **full access by design**:
-  no allow-lists, no path restrictions, no dry run. Accountability comes from the action log instead.
+  `system_info`, `fuse` (model fusion), and the integration layer: `rag` (retrieval index),
+  `model` (model endpoint config), `api` (custom API registry), `connector` (webhook/slack/github/http).
+  They run inside the container with **full access by design**: no allow-lists, no path restrictions,
+  no dry run, any host and any method. Accountability comes from the action log instead.
+  `code_analyze` reads the file from disk (not through `read_file`, whose output is capped at 20k
+  characters) - a truncated file never parses.
+- `config.py` - the runtime registry behind `model`, `api` and `connector`: one JSON file
+  (`devmind/agent/config.json`) holding model endpoints (name, base URL, model, *env var name* for the
+  key), custom APIs and connectors. It never contains a secret value, only the name of the variable that
+  carries one, so it is safe in git. `active_model()` is what `model_brain.py` reads, so the agent can
+  point its own brain at another endpoint with `model: add ...`.
+- `rag.py` - self-contained retrieval: chunks files by lines, embeds them with a deterministic hashing
+  vectorizer (stdlib `hashlib`, no model call), and searches by cosine similarity plus a lexical boost out
+  of SQLite (`devmind/agent/rag.db`). `stats()`/`sources()` do not create the database, so reading never
+  writes into the repo.
+- `integrations.py` - custom APIs and connectors built on the same `http_request`. Credentials are read
+  from the environment at call time; `github` and `slack` connectors default to `GITHUB_TOKEN` and
+  `SLACK_WEBHOOK_URL`. `connector test` only probes (a GET, nothing acted on); `connector send` posts a
+  real message.
 - `store.py` - durable state in `devmind/agent/agent.db` (WAL): a task queue (claim/complete/fail with
   retries, backoff and a lease) plus an action log of every tool call with arguments, output and duration.
 - `brain.py` - the decision maker. `DeliberativeBrain` follows explicit instructions, turns plain English
@@ -138,7 +174,10 @@ engine from scratch.
 
 Task instruction prefixes: `shell:<command>`, `fetch:<url>`, `look:<image path or URL>`, `say:<text>`,
 `git:`, `analyze:<path>`, `memory: store|recall|list|forget`, `eval:<expression>`, `system:`,
-`fuse:<json>`, `self:*` for the self-directed routines. Anything else goes to the
+`fuse:<json>`, `rag: index <path>|stats|sources|<question>`, `model: list|add|use|test|remove`,
+`api: list|register|call|remove`, `connector: list|add|test|send|remove`, `tool <name> <json args>`
+for any tool by name, and `self:*` for the self-directed routines (`self:index` rebuilds the retrieval
+index over `src`). Anything else goes to the
 deliberative planner, which understands plain English ("read src/x.py and write a note about it" becomes
 `read_file` then `write_file`); if it recognises nothing it looks around the repo.
 A tool argument containing `$last` is replaced with the previous call's output, which is how multi-step
@@ -169,16 +208,20 @@ continued on its own.
 docker compose -f docker-compose.base44.yml exec zyphus python -m pytest tests/ -v
 ```
 
-64 tests cover the five test suites:
+78 tests cover the six test suites:
 - `tests/test_store.py` - task queue (enqueue/claim/complete/fail/retry), action log, counts
 - `tests/test_brain.py` - DeliberativeBrain: prefix parsing (shell/say/git/analyze/memory/eval/system/fuse),
-  plain-English deliberation, all 10 self-directed routines, propose rotation, follow-up chaining
+  plain-English deliberation, all self-directed routines, propose rotation, follow-up chaining
 - `tests/test_tools.py` - real tool handlers (shell, file I/O, list_dir) and the registry catalog
 - `tests/test_model_brain.py` - ModelBrain: JSON extraction, model-backed plan and propose, fallback on
   failure, unknown-tool/routine rejection (all model calls are mocked)
 - `tests/test_new_tools.py` - fusion engine (trait scoring, response fusion, status), new tools
   (git_status, code_analyze, memory store/recall, python_eval, system_info, fuse), registry coverage
   failure, unknown-tool/routine rejection (all model calls are mocked)
+- `tests/test_capabilities.py` - config registry (models, APIs, connectors, env var names never values),
+  RAG (index, re-index, query, stats on a missing database, forget), and the four new tool handlers.
+  It patches `config.CONFIG_PATH` and `rag.DB_PATH` onto a tmp dir, so a test run never touches the
+  repo's own registry or index.
 
 The model brain's `propose` now asks the model for self-directed work (validated against the known
 `self:*` routines) instead of always delegating to the local brain; any failure falls back as before.

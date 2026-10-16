@@ -262,7 +262,10 @@ def code_analyze(path: str) -> ToolResult:
     full = _resolve(path)
     if not os.path.isfile(full):
         return ToolResult(False, error=f"not a file: {full}")
-    source = read_file(path).output
+    # Read from disk, not through read_file: that output is capped for the
+    # agent's context, and a truncated file never parses.
+    with open(full, "r", encoding="utf-8", errors="replace") as handle:
+        source = handle.read()
     try:
         tree = _ast.parse(source)
     except SyntaxError as exc:
@@ -437,6 +440,106 @@ def fuse_tool(responses: str = "") -> ToolResult:
                       meta={"cores": len(result["cores"]), "fusions": engine.fusions})
 
 
+# --- RAG (local retrieval index) ---------------------------------------------
+
+def rag_tool(action: str = "query", text: str = "", path: str = "", source: str = "",
+             top_k: int = 5) -> ToolResult:
+    """Index a path or retrieve the chunks most relevant to a query."""
+    from src.agent import rag
+
+    action = (action or "query").strip().lower()
+
+    if action in ("index", "ingest", "add"):
+        data = rag.index(path or ".", tag=source)
+        if "error" in data:
+            return ToolResult(False, error=str(data["error"]))
+        return ToolResult(
+            True,
+            output=(f"indexed {data['indexed_files']} files ({data['skipped']} skipped) "
+                    f"from {data['path']}\nindex now holds {data['documents']} sources / "
+                    f"{data['chunks']} chunks"),
+            meta=data)
+
+    if action in ("query", "search", "find", "retrieve"):
+        data = rag.search(text, top_k=int(top_k))
+        if data.get("error"):
+            return ToolResult(False, error=str(data["error"]))
+        hits = data.get("hits") or []
+        if not hits:
+            return ToolResult(True, output=data.get("note", "no matches"), meta=data)
+        blocks = [
+            f"{hit['source']}:{hit['line']}  (score {hit['score']}· chunk {hit['chunk']})\n"
+            f"{_truncate(hit['text'], 1200)}"
+            for hit in hits
+        ]
+        return ToolResult(
+            True,
+            output=f"{len(hits)} hits from {data['searched']} chunks for {text!r}\n\n"
+                   + "\n\n---\n\n".join(blocks),
+            meta={"hits": len(hits), "query": data.get("query")})
+
+    if action in ("sources", "files", "list"):
+        found = rag.sources()
+        return ToolResult(True, output="\n".join(found) or "(the index is empty)",
+                          meta={"count": len(found)})
+
+    if action in ("forget", "delete", "clear", "drop"):
+        data = rag.forget(source)
+        return ToolResult(True, output=f"removed {data['removed_chunks']} chunks - "
+                                       f"{data['chunks']} left in the index", meta=data)
+
+    if action in ("stats", "status"):
+        data = rag.stats()
+        return ToolResult(True, output=f"retrieval index: {data['documents']} sources, "
+                                       f"{data['chunks']} chunks, {data['dimensions']} dimensions\n"
+                                       f"database: {data['database']}", meta=data)
+
+    return ToolResult(False, error=f"unknown rag action: {action}")
+
+
+# --- models, custom APIs and connectors --------------------------------------
+
+
+def _payload_result(data: Dict[str, Any]) -> ToolResult:
+    """One shape for the integrations modules: pretty JSON plus a pass/fail flag."""
+    ok = bool(data.get("ok", "error" not in data))
+    text = _truncate(json.dumps(data, indent=2, default=str))
+    return ToolResult(ok, output=text, error="" if ok else str(data.get("error") or "failed"),
+                      meta=data)
+
+
+def model_config(action: str = "list", name: str = "", base_url: str = "", model: str = "",
+                 api_key_env: str = "OPENAI_API_KEY", provider: str = "openai") -> ToolResult:
+    """Configure model endpoints: list, add, activate, remove, or test one."""
+    from src.agent import integrations
+
+    return _payload_result(integrations.model(action=action, name=name, base_url=base_url,
+                                              model=model, api_key_env=api_key_env,
+                                              provider=provider))
+
+
+def custom_api(action: str = "list", name: str = "", base_url: str = "", path: str = "",
+               method: str = "GET", body: str = "", headers: Any = None,
+               auth_env: str = "", description: str = "") -> ToolResult:
+    """Register and call the agent's own custom API endpoints."""
+    from src.agent import integrations
+
+    return _payload_result(integrations.api(action=action, name=name, base_url=base_url,
+                                            path=path, method=method, body=body, headers=headers,
+                                            auth_env=auth_env, description=description))
+
+
+def connector(action: str = "list", name: str = "", kind: str = "", url: str = "",
+              auth_env: str = "", description: str = "", message: str = "",
+              payload: str = "", path: str = "") -> ToolResult:
+    """Add, probe or send through a connector (webhook, slack, github, http)."""
+    from src.agent import integrations
+
+    return _payload_result(integrations.connector(action=action, name=name, kind=kind, url=url,
+                                                  auth_env=auth_env, description=description,
+                                                  message=message, payload=payload, path=path))
+
+
 def build_registry() -> ToolRegistry:
     from src.agent import senses
 
@@ -499,4 +602,45 @@ def build_registry() -> ToolRegistry:
         "fuse", "Fuse multiple model responses into one. Pass a JSON array of "
                 '{"source": "...", "response": "..."} objects, or omit for status.',
         {"responses": "str JSON array (optional)"}, fuse_tool))
+    registry.register(Tool(
+        "rag", "Local retrieval index over files: index a path, or query it and get the most "
+               "relevant chunks back. No network, no external vector store.",
+        {"action": "str: index|query|sources|stats|forget (optional, default query)",
+         "text": "str the question (required for query)",
+         "path": "str file or directory to index (optional, defaults to the repo root)",
+         "source": "str tag when indexing, or the source to forget",
+         "top_k": "int how many chunks to return (optional, default 5)"}, rag_tool))
+    registry.register(Tool(
+        "model", "Configure the model endpoints the brain plans with: list, add, activate, "
+                 "remove, or test one against its live API.",
+        {"action": "str: list|add|use|remove|test (optional, default list)",
+         "name": "str endpoint label",
+         "base_url": "str OpenAI-compatible base URL, e.g. https://api.openai.com/v1",
+         "model": "str model name, e.g. gpt-4o-mini",
+         "api_key_env": "str name of the env var holding the key (optional)",
+         "provider": "str provider label (optional)"}, model_config))
+    registry.register(Tool(
+        "api", "Register your own API endpoints once (name, base URL, headers, key env var) and "
+               "call them by name afterwards; any host, any method.",
+        {"action": "str: list|register|remove|call (optional, default list)",
+         "name": "str endpoint label",
+         "base_url": "str base URL (for register)",
+         "path": "str path or full URL to call (for call)",
+         "method": "str HTTP method (optional, default GET)",
+         "body": "str request body (optional)",
+         "headers": "object or JSON str extra headers (optional)",
+         "auth_env": "str name of the env var holding the key (optional)",
+         "description": "str what the endpoint is for (optional)"}, custom_api))
+    registry.register(Tool(
+        "connector", "Named integrations (webhook, slack, github, http): add, probe or send "
+                     "through them. Credentials stay in the environment.",
+        {"action": "str: list|add|remove|test|send (optional, default list)",
+         "name": "str connector name",
+         "kind": "str: webhook|slack|github|http (optional, default webhook)",
+         "url": "str target URL (optional; slack/github read their env var)",
+         "auth_env": "str name of the env var holding the credential (optional)",
+         "message": "str text to send (for send)",
+         "payload": "str raw JSON body to send instead (optional)",
+         "path": "str path for a github connector call (optional)",
+         "description": "str what the connector is for (optional)"}, connector))
     return registry

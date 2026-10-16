@@ -9,6 +9,16 @@
       "requiredAtBoot": false
     },
     {
+      "name": "GITHUB_TOKEN",
+      "description": "Optional. Credential for the built-in 'github' connector (src/agent/integrations.py). A fine-grained token with read access is enough for probing and reading; without it the connector reports 'not set' instead of failing.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "SLACK_WEBHOOK_URL",
+      "description": "Optional. Incoming-webhook URL for the built-in 'slack' connector, used when a connector has no URL of its own. Without it, 'connector: send' to a slack connector refuses and the rest of the agent is unaffected.",
+      "requiredAtBoot": false
+    },
+    {
       "name": "OPENAI_API_KEY",
       "description": "Optional. An OpenAI-compatible API key; when present the agent plans with a real model (src/agent/model_brain.py) instead of the local deliberative brain.",
       "requiredAtBoot": false
