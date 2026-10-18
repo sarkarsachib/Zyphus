@@ -38,6 +38,14 @@ PORT = int(os.environ.get("ZYPHUS_WEB_PORT", "3000"))
 CLI_TIMEOUT = int(os.environ.get("ZYPHUS_CLI_TIMEOUT", "300"))
 IS_PREVIEW = os.environ.get("BASE44_PREVIEW_MODE") == "1"
 
+# Browsers ask for /favicon.ico on every load; without a route the 404 surfaces
+# as a failed request in the preview. Served inline so no binary asset is needed.
+FAVICON = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<rect width="64" height="64" rx="14" fill="#06080d"/>
+<path d="M20 21h24L20 43h24" fill="none" stroke="#2dd4bf" stroke-width="7"
+ stroke-linecap="round" stroke-linejoin="round"/>
+</svg>"""
+
 COMPONENT_LINE = re.compile(r"^\s*([A-Za-z_][\w]*)\s*:\s*(OK|FAIL)\s*$", re.MULTILINE)
 
 
@@ -219,6 +227,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
+
+        if path in ("/favicon.ico", "/favicon.svg"):
+            self._send(200, FAVICON, "image/svg+xml", cache=True)
+            return
 
         if path in ("/", "/index.html"):
             with open(os.path.join(WEB_ROOT, "index.html"), "rb") as handle:
