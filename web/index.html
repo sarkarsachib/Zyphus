@@ -219,6 +219,7 @@ code { font-family: ui-monospace, monospace; color: #b8c8dc; }
   <button class="tab" data-tab="caps">Capabilities</button>
   <button class="tab" data-tab="memory">Memory</button>
   <button class="tab" data-tab="fusion">Fusion</button>
+  <button class="tab" data-tab="cognition">Cognition</button>
   <button class="tab" data-tab="body">Body & Voice</button>
 </nav>
 </div>
@@ -363,6 +364,27 @@ code { font-family: ui-monospace, monospace; color: #b8c8dc; }
 ]</textarea>
     <div class="row" style="margin-top:8px"><button class="primary" id="run-fuse">Fuse Responses</button></div>
     <pre class="log" id="fuse-out">Awaiting responses…</pre>
+  </div>
+</div>
+
+<!-- ═══ COGNITION ═══ -->
+<div class="section" id="sec-cognition">
+  <div class="panel">
+    <div class="panel-head"><h2>Cognitive Substrate</h2><div class="badge" id="cog-badge"><span class="dot"></span><span id="cog-text">…</span></div></div>
+    <div class="pills" id="cog-pills"></div>
+    <p class="hint" style="margin-top:8px">The structure is generated per problem from the same primitives, wired by what each one produces and consumes — not selected from a list of workflows. Regimes move on measurements, not on a schedule.</p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>Last Structure</h2><button class="ghost" id="cog-refresh">Refresh</button></div>
+    <div id="cog-structure"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>World Model</h2><div class="badge" id="cog-world-badge"><span class="dot"></span><span id="cog-world-text">…</span></div></div>
+    <div id="cog-world"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>What the substrate can compose</h2></div>
+    <div id="cog-resources"></div>
   </div>
 </div>
 
@@ -682,9 +704,52 @@ $("rag-search").addEventListener("click", () => {
 });
 $("rag-index").addEventListener("click", () => runTool("rag", {action:"index", path:"src"}, $("rag-out")));
 
+/* ── cognition ── */
+async function loadCognition() {
+  try {
+    const d = await (await fetch("/api/substrate")).json();
+    if (d.error) { $("cog-text").textContent = "error"; return; }
+    const last = d.last || {};
+    const b = $("cog-badge"); b.classList.remove("ok","bad"); b.classList.add(last.nodes ? "ok" : "bad");
+    $("cog-text").textContent = last.regime ? ("regime " + last.regime) : "idle";
+    $("cog-pills").innerHTML = [
+      `<span>primitives <b>${Object.keys(d.primitives||{}).length}</b></span>`,
+      `<span>classes <b>${(d.classes||[]).join(", ")}</b></span>`,
+      `<span>regimes <b>${(d.regimes||[]).join(" › ")}</b></span>`
+    ].join("");
+
+    const nodes = last.nodes || [], hyps = last.hypotheses || [];
+    $("cog-structure").innerHTML = nodes.length ? `
+      <div class="tool-card">
+        <div class="tn">${esc(last.klass || "?")} <span class="hint">revision ${last.revision||0}${last.testable?" · testable":""}</span></div>
+        <div class="td">${esc(last.goal || "")}</div>
+        <div class="params">${esc(last.signature || "")}</div>
+        <div class="params">spend ${last.spend||0} / ${last.budget||0} · uncertainty ${last.uncertainty==null?"—":esc(String(last.uncertainty))} · ${nodes.length} nodes · ${last.edges?last.edges.length:0} edges</div>
+      </div>
+      <div class="pills" style="margin-top:8px">${nodes.map(n=>`<span>${esc(n.primitive)} <b>${esc(n.kind)}</b></span>`).join("")}</div>
+      ${last.chosen_experiment ? `<div class="action ok"><div class="out">chosen experiment · ${esc(last.chosen_experiment.label)} — ${esc(String(last.chosen_experiment.gain))} bits for ${esc(String(last.chosen_experiment.cost))} cost</div></div>` : ""}
+      ${hyps.map(h=>`<div class="action"><div class="out">${esc(h.id)} · ${esc(h.claim)} <span class="hint">score ${esc(String(h.score))}${h.verified?" · verified":""}</span></div></div>`).join("")}
+      ${(last.history||[]).slice(-3).map(h=>`<div class="action"><div class="out">rev ${h.revision} · ${esc(h.operator)} <span class="hint">${esc(h.reason)}</span></div></div>`).join("")}
+    ` : '<div class="action"><span class="hint">Nothing has been composed in this process yet. Enqueue <code>substrate: &lt;goal&gt;</code> (or let the loop run <code>self:adapt</code>) and refresh.</span></div>';
+
+    const w = d.world || {};
+    $("cog-world-text").textContent = `${w.concepts||0} concepts · ${w.relations||0} relations`;
+    $("cog-world").innerHTML = (w.exists === false || (!(w.top_relations||[]).length && !(w.top_strategies||[]).length))
+      ? '<div class="action"><span class="hint">empty — it fills as runs are compressed into it</span></div>'
+      : (w.top_relations||[]).map(r=>`<div class="action"><div class="out">${esc(r.src)} → ${esc(r.dst)} <span class="hint">${esc(r.kind)} · ${r.evidence} observation(s)</span></div></div>`).join("")
+        + (w.top_strategies||[]).map(s=>`<div class="action"><div class="out">${esc(s.strategy)} <span class="hint">${(s.success_rate*100).toFixed(0)}% over ${s.attempts} run(s) · ${s.successes} ok</span></div></div>`).join("");
+
+    const res = d.resources || {};
+    $("cog-resources").innerHTML =
+      (res.available||[]).map(name=>`<div class="tool-card"><div class="tn">${esc(name)}</div><div class="params">available</div></div>`).join("")
+      + (res.unavailable||[]).map(u=>`<div class="tool-card"><div class="tn">${esc(u.name)} <span class="hint">not usable yet</span></div><div class="td">${esc(u.note)}</div></div>`).join("");
+  } catch(e) { $("cog-text").textContent = "error"; }
+}
+$("cog-refresh").addEventListener("click", loadCognition);
+
 /* ── init ── */
 $("refresh").addEventListener("click", loadStatus);
-loadStatus(); loadAgent(); loadModules(); loadMemory(); loadFusion(); loadCaps();
+loadStatus(); loadAgent(); loadModules(); loadMemory(); loadFusion(); loadCaps(); loadCognition();
 setInterval(loadAgent, 15000);
 </script>
 </body>

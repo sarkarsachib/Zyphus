@@ -102,6 +102,18 @@ class DeliberativeBrain:
             return self._api_instruction(rest)
         if prefix in ("connector", "connectors", "connect", "hook"):
             return self._connector_instruction(rest)
+        if prefix in ("substrate", "morph", "structure"):
+            return self._substrate_instruction(rest)
+        if prefix in ("phase", "regime"):
+            return self._phase_instruction(rest)
+        if prefix in ("world", "relations", "tendency"):
+            return self._world_instruction(rest)
+        if prefix in ("predict", "counterfactual", "whatif", "what-if"):
+            return self._predict_instruction(rest)
+        if prefix in ("resources", "compute", "route"):
+            return self._resources_instruction(rest)
+        if prefix in ("bench", "benchmark", "measure"):
+            return [ToolCall("benchmark", {"action": rest.strip().lower() or "summary"})]
         if prefix == "self":
             return self._self_directed(rest)
         return self._deliberate(instructions)
@@ -211,6 +223,81 @@ class DeliberativeBrain:
             return [ToolCall("connector", {"action": "send", "name": name,
                                            "message": message.strip()})]
         return [ToolCall("connector", {"action": "list"})]
+
+    def _substrate_instruction(self, rest: str) -> List[ToolCall]:
+        """Parse 'substrate: <goal>', 'substrate: run <goal> [--execute]', 'substrate: restructure {json}'."""
+        rest = (rest or "").strip()
+        verb, _, arg = rest.partition(" ")
+        verb, arg = verb.lower(), arg.strip()
+        if verb in ("stats", "primitives", "catalog"):
+            return [ToolCall("substrate", {"action": "stats"})]
+        if verb in ("last", "show"):
+            return [ToolCall("substrate", {"action": "last"})]
+        if verb in ("restructure", "rebuild"):
+            return [ToolCall("substrate", {"action": "restructure", "observation": arg})]
+        if verb in ("run", "execute"):
+            allow = arg.endswith("--execute")
+            goal = arg[:-len("--execute")].strip() if allow else arg
+            return [ToolCall("substrate", {"action": "execute", "goal": goal,
+                                           "allow_execution": allow})]
+        return [ToolCall("substrate", {"action": "build", "goal": rest})]
+
+    def _phase_instruction(self, rest: str) -> List[ToolCall]:
+        """Parse 'phase: status', 'phase: decide', 'phase: 0.2,0.4' (a progress series)."""
+        rest = (rest or "").strip()
+        verb, _, arg = rest.partition(" ")
+        if verb.lower() in ("decide", "why"):
+            return [ToolCall("phase", {"action": "decide"})]
+        return [ToolCall("phase", {"action": "status", "progress": arg or rest})]
+
+    def _world_instruction(self, rest: str) -> List[ToolCall]:
+        """Parse 'world: stats|strategies [klass]|hypotheses <concept>|observe a, b -> ok|confirm <id> ok'."""
+        rest = (rest or "").strip()
+        verb, _, arg = rest.partition(" ")
+        verb, arg = verb.lower(), arg.strip()
+        if verb in ("strategies", "procedures"):
+            return [ToolCall("world", {"action": "strategies", "klass": arg})]
+        if verb in ("hypotheses", "generate"):
+            return [ToolCall("world", {"action": "hypotheses", "source": arg})]
+        if verb in ("neighbors", "relations"):
+            return [ToolCall("world", {"action": "neighbors", "source": arg})]
+        if verb in ("observe", "learn"):
+            concepts, _, outcome = arg.partition("->")
+            return [ToolCall("world", {"action": "observe", "concepts": concepts.strip(),
+                                       "outcome": outcome.strip() or "observed"})]
+        if verb in ("associate", "relate"):
+            parts = arg.split()
+            return [ToolCall("world", {"action": "associate",
+                                       "source": parts[0] if parts else "",
+                                       "target": parts[1] if len(parts) > 1 else ""})]
+        if verb == "confirm":
+            parts = arg.split()
+            identifier = parts[0] if parts and parts[0].isdigit() else "0"
+            return [ToolCall("world", {"action": "confirm", "prediction_id": int(identifier),
+                                       "outcome": parts[1] if len(parts) > 1 else "confirmed"})]
+        if verb == "predictions":
+            return [ToolCall("world", {"action": "predictions"})]
+        return [ToolCall("world", {"action": "stats"})]
+
+    def _predict_instruction(self, rest: str) -> List[ToolCall]:
+        """Parse 'predict: rank|choose|simulate' - over the current substrate's candidates."""
+        verb = (rest or "").strip().lower()
+        if verb in ("choose", "best", "experiment"):
+            return [ToolCall("predict", {"action": "choose"})]
+        if verb in ("simulate", "worlds"):
+            return [ToolCall("predict", {"action": "simulate"})]
+        return [ToolCall("predict", {"action": "rank"})]
+
+    def _resources_instruction(self, rest: str) -> List[ToolCall]:
+        """Parse 'resources: list', 'resources: stats', 'resources: route <requirement>'."""
+        rest = (rest or "").strip()
+        verb, _, arg = rest.partition(" ")
+        verb, arg = verb.lower(), arg.strip()
+        if verb in ("route", "plan"):
+            return [ToolCall("resources", {"action": "route", "requirement": arg or rest})]
+        if verb in ("stats", "measured", "performance"):
+            return [ToolCall("resources", {"action": "stats"})]
+        return [ToolCall("resources", {"action": "list"})]
 
     def _explicit_tool(self, instructions: str) -> List[ToolCall]:
         remainder = instructions[len("tool"):].lstrip(": ").strip()
@@ -436,6 +523,28 @@ class DeliberativeBrain:
                     "content": f"# Retrieval index\n\nRebuilt at {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```\n$last\n```\n",
                 }),
             ]
+        if routine in ("adapt", "substrate"):
+            # Its own open question, answered by a structure it builds on the spot.
+            return [
+                ToolCall("substrate", {
+                    "action": "execute",
+                    "goal": "why does the agent loop pace itself the way it does with a backlog - "
+                            "understand it from the source",
+                }),
+                ToolCall("phase", {"action": "status"}),
+                ToolCall("write_file", {
+                    "path": self._note_path("substrate"),
+                    "content": f"# Cognitive substrate\n\nComposed at {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```json\n$last\n```\n",
+                }),
+            ]
+        if routine in ("learn", "world"):
+            return [
+                ToolCall("world", {"action": "strategies"}),
+                ToolCall("write_file", {
+                    "path": self._note_path("learning"),
+                    "content": f"# What the world model has measured\n\nAt {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n```\n$last\n```\n",
+                }),
+            ]
 
         module = self._next_module()
         self._looked_at.add(module)
@@ -459,6 +568,8 @@ class DeliberativeBrain:
         "self:git": "Check git status and recent commits",
         "self:system": "Report system info (CPU, memory, disk)",
         "self:index": "Rebuild its retrieval index over its own source",
+        "self:adapt": "Compose a cognitive substrate for an open question and run it",
+        "self:learn": "Report the procedures the world model has measured",
     }
 
     def propose(self, context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, str]]:
@@ -469,7 +580,7 @@ class DeliberativeBrain:
 
         order = ["self:inspect", "self:improve", "self:reflect", "self:explore",
                 "self:voice", "self:selftest", "self:inventory", "self:remember",
-                "self:git", "self:system", "self:index"]
+                "self:git", "self:system", "self:index", "self:adapt", "self:learn"]
         if failures:
             order.insert(0, "self:selftest")  # something broke: check itself first
         elif not recent:

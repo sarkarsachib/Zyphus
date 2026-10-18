@@ -188,6 +188,31 @@ def fusion_payload():
         return {"error": str(exc)}
 
 
+def substrate_payload():
+    """The cognitive layer: what the substrate can build from, what it last built, what it knows.
+
+    Read-only, like everything else the dashboard exposes. The world model is only
+    read - opening this tab never creates one.
+    """
+    try:
+        from src.agent import phases, resources, substrate
+        from src.agent.worldmodel import WorldModel
+    except Exception as exc:  # a broken module must not blank the tab
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    catalogue = substrate.stats()
+    return {
+        "primitives": catalogue["primitives"],
+        "classes": catalogue["classes"],
+        "regimes": catalogue["regimes"],
+        "thresholds": catalogue["thresholds"],
+        "last": catalogue["last"],
+        "world": WorldModel().stats(),
+        "resources": resources.stats(),
+        "benchmark": ("src/agent/benchmark.py - run `bench: summary` from the agent CLI to measure "
+                      "the four research goals"),
+    }
+
+
 def capabilities_payload():
     """What the agent can reach: model endpoints, custom APIs, connectors, retrieval index.
 
@@ -253,6 +278,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, fusion_payload())
             elif path == "/api/capabilities":
                 self._send_json(200, capabilities_payload())
+            elif path == "/api/substrate":
+                self._send_json(200, substrate_payload())
             elif path.startswith("/api/agent/voice/"):
                 self._send_voice(path.rsplit("/", 1)[-1])
             else:

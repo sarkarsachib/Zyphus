@@ -643,4 +643,63 @@ def build_registry() -> ToolRegistry:
          "payload": "str raw JSON body to send instead (optional)",
          "path": "str path for a github connector call (optional)",
          "description": "str what the connector is for (optional)"}, connector))
+
+    from src.agent import cognition
+
+    registry.register(Tool(
+        "substrate", "Cognitive morphogenesis: compose a temporary structure for a problem out of "
+                     "reusable primitives and wire it by what each one produces, then run it "
+                     "(analysis for real, execution only when allowed) or restructure it after an "
+                     "observation.",
+        {"action": "str: build|execute|restructure|last|stats (optional, default build)",
+         "goal": "str the problem",
+         "limit": "int how many nodes may run (optional, default 12)",
+         "allow_execution": "bool may the chosen test actually run (optional, default false)",
+         "command": "str an explicit command to run instead (optional)",
+         "observation": "str JSON observation for restructure (optional)",
+         "world_path": "str world model path (optional, for a throwaway run)"},
+        cognition.substrate_tool))
+    registry.register(Tool(
+        "phase", "Intelligence phase transitions: the regime the system is in - explore, converge, "
+                 "execute, recover, compress - and the measurements that would move it.",
+        {"action": "str: status|decide (optional, default status)",
+         "budget": "float compute budget (optional)", "spend": "float compute spent (optional)",
+         "contradictions": "int how many observations conflict (optional)",
+         "progress": "str comma-separated progress series (optional)"}, cognition.phase_tool))
+    registry.register(Tool(
+        "world", "Memory as a generative world: record outcomes, read the relations they build, "
+                 "generate hypotheses from learned tendencies (unverified until confirmed), and "
+                 "see the procedures that have measured success.",
+        {"action": "str: stats|observe|associate|hypotheses|confirm|strategies|neighbors|"
+                   "predictions|forget (optional, default stats)",
+         "concepts": "str comma-separated concepts (for observe)",
+         "outcome": "str how it turned out", "klass": "str problem class",
+         "source": "str subject concept (hypotheses, neighbors, confirm evidence)",
+         "target": "str second concept (for associate)", "kind": "str relation kind",
+         "prediction_id": "int the generated prediction to settle",
+         "limit": "int (optional)", "world_path": "str database path (optional)"},
+        cognition.world_tool))
+    registry.register(Tool(
+        "predict", "Counterfactual reality engine: predict what candidate actions would touch, "
+                   "rank them by information per unit of cost, and choose the one that actually "
+                   "separates the live hypotheses.",
+        {"action": "str: rank|choose|simulate (optional, default rank)",
+         "hypotheses": "str JSON array of hypotheses (optional - uses the current substrate)",
+         "candidates": "str JSON array of candidate actions (optional)",
+         "goal": "str what is being decided (optional)"}, cognition.predict_tool))
+    registry.register(Tool(
+        "resources", "The resource layer behind the substrate: what can compute, and how a "
+                     "requirement is routed across models, deterministic code, retrieval and real "
+                     "execution - ordered by measured reliability.",
+        {"action": "str: list|route|record|stats (optional, default list)",
+         "requirement": "str what needs doing (for route)",
+         "name": "str resource name (for record)", "ok": "bool did it work",
+         "cost": "float measured cost"}, cognition.resources_tool))
+    registry.register(Tool(
+        "benchmark", "Measure the four research goals - structural adaptability, experimental "
+                     "reasoning, learned procedural improvement, resource-aware intelligence - "
+                     "against a fixed-loop baseline.",
+        {"action": "str: summary|run (optional, default summary)",
+         "root": "str repository root (optional)",
+         "world_path": "str temporary world model path (optional)"}, cognition.benchmark_tool))
     return registry
