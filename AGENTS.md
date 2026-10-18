@@ -40,10 +40,13 @@ Source is bind-mounted, so code edits need no rebuild. A change to `requirements
 - The engine persists state **inside the repo** (`devmind/memory/**`, `nishkraman/logs/**`, root `*.db`).
   It is bind-mounted and writable. `PYTHONDONTWRITEBYTECODE=1` stops `__pycache__` churn in git.
 - No credentials are needed to run the stack. `src/dynamic_code_generator.py` reads `OPENAI`/`ANTHROPIC`
-  keys but is not part of the CLI runtime, so it is not wired into compose. The two optional secrets are
-  `ZYPHUS_CONTROL_TOKEN` (arms the dashboard task box) and `OPENAI_API_KEY` (model-backed brain); both
-  arrive through `env_file: /run/base44/app.env`, never through `environment:` - a value there would
-  permanently outrank the dashboard. The stack boots and works with neither.
+  keys but is not part of the CLI runtime, so it is not wired into compose. The optional secrets are
+  `ZYPHUS_CONTROL_TOKEN` (arms the dashboard task box), `OPENAI_API_KEY` (model-backed brain), and the
+  connector credentials `GITHUB_TOKEN` / `SLACK_WEBHOOK_URL` (defaults for a `github` / `slack` connector -
+  `config.DEFAULT_CONNECTOR_ENVS`). All of them arrive through `env_file: /run/base44/app.env`, never
+  through `environment:` - a value there would permanently outrank the dashboard. The stack boots and works
+  with none of them; `config.env_present("<NAME>")` reports which one reached the process without printing
+  any value.
 - `requirements.txt` now includes **numpy**: `emotion_200d_system`, `mood_stabilizer`, `cluster_modulation`
   and friends cannot even be imported without it, so the agent's mood would be permanently "unavailable".
   `Dockerfile.base44` installs **espeak-ng**, which is the agent's voice (`speak` renders a wav from a
