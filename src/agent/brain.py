@@ -68,12 +68,15 @@ class DeliberativeBrain:
 
     def plan(self, task: Dict[str, Any]) -> List[ToolCall]:
         instructions = (task.get("instructions") or "").strip()
+        lowered = instructions.lower()
+        # `tool <name> <json>` carries JSON colons, so it must be recognised
+        # before the instruction is split on the first colon.
+        if lowered == "tool" or lowered.startswith(("tool ", "tool:")):
+            return self._explicit_tool(instructions)
         prefix, _, rest = instructions.partition(":")
         prefix = prefix.strip().lower()
         rest = rest.strip()
 
-        if prefix == "tool":
-            return self._explicit_tool(instructions)
         if prefix == "shell":
             return [ToolCall("run_shell", {"command": rest})]
         if prefix in ("fetch", "read_url"):

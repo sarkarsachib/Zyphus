@@ -173,6 +173,23 @@ engine from scratch.
   Scores model responses on real, deterministic signals (length, structure, keyword density,
   code-block presence), fuses multiple responses by weighted consensus, and extracts cognitive
   traits from text — no randomness, stdlib only. Used by the `fuse` tool and exposed at `GET /api/fusion`.
+  `src/llm_superfusing_engine_adapter.py` is now a thin adapter over it: a core holds no traits until
+  a real response is recorded, fusion without recorded responses fails honestly, and stability is
+  derived from observation consistency against the fusion success rate.
+- `vector_memory` tool - durable similarity memory. Backed by `src/hybrid_memory_system.py`, whose
+  vector layer is real now: text is embedded with a deterministic hashed bag-of-features vector
+  (256 dimensions, `hashlib`, no model call), vectors are packed as float64 blobs in SQLite
+  (`devmind/agent/hybrid_memory/vector/embeddings.db`), and search ranks by cosine similarity with an
+  optional namespace filter and score floor. `store|search|get|delete|stats`.
+- `code_check` tool - validates or compiles code with the language's own toolchain through
+  `src/fusion_port.py` (`validate_code` / `compile_code`): Python compiles in-process, JavaScript goes
+  through `node --check`, Rust through `rustc`, Go through `gofmt -e` (and `cargo`/`go build` for
+  compilation). A missing toolchain returns `available: false` — it never reports a fake pass. This is
+  the check to run before writing generated code into the repo.
+- `process` tool - real process control from `/proc`: `list` (sorted by RSS, CPU ticks or name),
+  `info` (state, threads, RSS, cmdline, cwd, exe, age), `monitor` (CPU% over a sampled interval) and
+  `kill` (any signal, reporting whether the process is still alive). This is the same code the
+  System PORT's `process_management` operation now uses instead of its old stub.
 - `cli.py` - `python src/main.py agent status|tools|tasks|run|tick|forever`.
 
 Task instruction prefixes: `shell:<command>`, `fetch:<url>`, `look:<image path or URL>`, `say:<text>`,
@@ -185,6 +202,8 @@ deliberative planner, which understands plain English ("read src/x.py and write 
 `read_file` then `write_file`); if it recognises nothing it looks around the repo.
 A tool argument containing `$last` is replaced with the previous call's output, which is how multi-step
 tasks chain (read a file, then write a note containing it).
+`tool <name> <json>` is matched before the instruction is split on its first colon (the JSON itself
+contains colons), so both `tool process {"action":"list"}` and `tool: process {...}` route to the tool.
 
 Running it: the loop autostarts inside the dashboard process when `ZYPHUS_AGENT_AUTOSTART=1` (set in
 compose). State is in SQLite, so a restart loses nothing - a task claimed when the process died is
@@ -211,7 +230,15 @@ continued on its own.
 docker compose -f docker-compose.base44.yml exec zyphus python -m pytest tests/ -v
 ```
 
-78 tests cover the six test suites:
+173 tests cover the nine test suites:
+- `tests/test_hybrid_memory.py` - deterministic embedding, store/search ranking, namespace filters,
+  idempotent re-index, delete/get/stats, persistence across instances
+- `tests/test_fusion_port.py` - real Python/JavaScript validation (and unavailable-toolchain honesty),
+  bytecode compilation, /proc process list/info/monitor/signal, System PORT dispatch
+- `tests/test_superfusing_adapter.py` - unmeasured cores, deterministic traits, honest fusion failure,
+  measured fusion ranking, stability and weight optimisation
+- `tests/test_system_tools.py` - the `vector_memory`, `code_check` and `process` tool handlers, the
+  `tool <name> <json>` instruction route, and registry coverage for the new tools
 - `tests/test_store.py` - task queue (enqueue/claim/complete/fail/retry), action log, counts
 - `tests/test_brain.py` - DeliberativeBrain: prefix parsing (shell/say/git/analyze/memory/eval/system/fuse),
   plain-English deliberation, all self-directed routines, propose rotation, follow-up chaining

@@ -1,238 +1,298 @@
 """
-Real LLM SuperFusing Engine Implementation
-Provides actual cognitive fusion capabilities for multi-model integration
+SuperFusing engine adapter - deterministic, measurement-driven.
+
+This module used to be a stub: it seeded every "cognitive trait" with
+`random.uniform(...)`, picked its algorithm with `random.choice(...)`, and then
+reported numbers that meant nothing. It now delegates all scoring to
+`src.agent.fusion`, which scores text on real signals (length, structure,
+keyword density, code blocks, lexical diversity) with no randomness at all.
+
+A core holds no traits until a response is actually recorded for it, and a
+fusion with nothing recorded fails honestly instead of inventing an answer.
+The public surface is unchanged, so existing callers keep working:
+
+    engine = LLMSuperFusingEngine()
+    await engine.initialize()
+    await engine.fuse_models({"responses": [{"source": "Claude", "response": "..."}]})
+    await engine.get_system_status()
 """
-import asyncio
-import random
-import time
+
 import hashlib
+import json
+import time
 import uuid
-from typing import Dict, Any, List
 from collections import deque
+from typing import Any, Dict, List, Optional
+
+from src.agent.fusion import FusionEngine, _score_response
+
+
+def _mean(values: List[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
 
 
 class FusionCore:
-    """Individual fusion core for model integration"""
+    """One model's measured contribution to the fusion."""
+
     def __init__(self, core_id: str, model_source: str):
         self.id = core_id
         self.model_source = model_source
-        self.stability = 0.95
+        self.stability = 0.0
         self.active = True
         self.processed_requests = 0
         self.successful_fusions = 0
-        self.cognitive_traits = {}
+        self.cognitive_traits: Dict[str, float] = {}
         self.integration_strength = 0.0
+        self.responses: List[str] = []
+        self.observations: List[Dict[str, float]] = []
         self.created_at = time.time()
-        
-    def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process input through fusion core"""
-        self.processed_requests += 1
-        result = {
-            'core_id': self.id,
-            'model': self.model_source,
-            'processed': True,
-            'traits_extracted': len(self.cognitive_traits)
+
+    @property
+    def measured(self) -> bool:
+        return bool(self.observations)
+
+    def observe(self, text: str) -> Dict[str, float]:
+        """Record a real response and re-derive this core's traits from it."""
+        traits = _score_response(text)
+        self.responses.append(text)
+        self.observations.append(traits)
+        self.cognitive_traits = {
+            name: round(_mean([obs.get(name, 0.0) for obs in self.observations]), 3)
+            for name in traits
         }
-        return result
-    
+        self.processed_requests += 1
+        self.integration_strength = round(_mean(list(self.cognitive_traits.values())), 3)
+        self.stability = self.calculate_stability()
+        return traits
+
+    def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Score one input through this core."""
+        if isinstance(input_data, dict):
+            text = (input_data.get("text") or input_data.get("response")
+                    or json.dumps(input_data, default=str))
+        else:
+            text = str(input_data)
+        traits = self.observe(text)
+        return {
+            "core_id": self.id,
+            "model": self.model_source,
+            "processed": True,
+            "traits": traits,
+            "stability": self.stability,
+            "integration_strength": self.integration_strength,
+        }
+
     def calculate_stability(self) -> float:
-        """Calculate core stability based on performance"""
+        """How consistent this core's real observations are.
+
+        No observations means no measurement, and that is reported as 0.0 -
+        not as a confident default.
+        """
+        if not self.observations:
+            return 0.0
+        scores = [_mean(list(obs.values())) for obs in self.observations]
+        mean = _mean(scores)
+        spread = (max(scores) - min(scores)) / max(mean, 1e-9)
+        consistency = max(0.0, 1.0 - spread)
         success_rate = self.successful_fusions / max(1, self.processed_requests)
-        age_factor = 1.0 - min(0.1, (time.time() - self.created_at) / 10000)
-        stability = (success_rate * 0.7 + self.integration_strength * 0.3) * age_factor
-        return stability
+        return round(0.6 * consistency + 0.4 * success_rate, 3)
 
 
 class LLMSuperFusingEngine:
-    """
-    Real LLM fusion engine with actual multi-model integration.
-    Combines cognitive traits from multiple models for enhanced capabilities.
-    """
-    
+    """Fuse real model responses; every number comes from measured text."""
+
     def __init__(self):
         self.initialized = False
         self.fusion_cores: List[FusionCore] = []
         self.fusion_history = deque(maxlen=500)
-        self.cognitive_weights = {}
-        self.fusion_algorithms = ['weighted_average', 'attention_fusion', 'ensemble', 'neural_blend']
+        self.cognitive_weights: Dict[str, Dict[str, float]] = {}
+        self.fusion_algorithms = ["weighted_consensus", "trait_scoring"]
+        self._engine = FusionEngine()
         self._initialize_cores()
-        
+
     def _initialize_cores(self):
-        """Initialize actual fusion cores with different model sources"""
-        sources = ['GPT-4', 'Claude', 'LLaMA', 'Gemini', 'Mistral']
-        
-        for i, source in enumerate(sources):
-            core = FusionCore(f"core_{i+1}", source)
-            core.cognitive_traits = self._extract_base_traits(source)
-            core.integration_strength = random.uniform(0.7, 0.95)
-            self.fusion_cores.append(core)
-    
-    def _extract_base_traits(self, model_source: str) -> Dict[str, float]:
-        """Extract baseline cognitive traits for a model source"""
-        base_traits = {
-            'reasoning': random.uniform(0.75, 0.95),
-            'creativity': random.uniform(0.65, 0.90),
-            'accuracy': random.uniform(0.80, 0.95),
-            'speed': random.uniform(0.70, 0.90),
-            'empathy': random.uniform(0.60, 0.85),
-            'knowledge': random.uniform(0.75, 0.95),
-            'analysis': random.uniform(0.78, 0.92),
-            'synthesis': random.uniform(0.70, 0.88)
-        }
-        return base_traits
-    
+        """Create one core per known model source - with no invented traits."""
+        sources = ["GPT-4", "Claude", "LLaMA", "Gemini", "Mistral"]
+        for index, source in enumerate(sources):
+            self.fusion_cores.append(FusionCore(f"core_{index + 1}", source))
+
+    def _core(self, model_source: str) -> Optional[FusionCore]:
+        return next((c for c in self.fusion_cores if c.model_source == model_source), None)
+
     async def initialize(self):
-        """Initialize the fusion engine"""
+        """Mark the engine ready; cores stay unmeasured until data arrives."""
         self.initialized = True
-        
-        for core in self.fusion_cores:
-            core.stability = core.calculate_stability()
-            
-        self._record_fusion_event("initialized", {"cores": len(self.fusion_cores)})
-        return {"success": True, "cores": len(self.fusion_cores)}
-    
+        self._record_fusion_event("initialized", {
+            "cores": len(self.fusion_cores),
+            "measured_cores": len([c for c in self.fusion_cores if c.measured]),
+        })
+        return {"success": True, "cores": len(self.fusion_cores),
+                "measured_cores": len([c for c in self.fusion_cores if c.measured])}
+
     def _record_fusion_event(self, event_type: str, data: Dict[str, Any]):
-        """Record fusion event for history"""
-        event = {
-            'timestamp': time.time(),
-            'event_type': event_type,
-            'data': data
-        }
-        self.fusion_history.append(event)
-    
-    async def fuse_models(self, input_data: Dict[str, Any], models: List[str] = None) -> Dict[str, Any]:
-        """Perform actual model fusion"""
-        if models is None:
-            models = [c.model_source for c in self.fusion_cores if c.active]
-        
-        selected_cores = [c for c in self.fusion_cores if c.model_source in models and c.active]
-        
-        if not selected_cores:
-            return {'success': False, 'error': 'No valid models selected'}
-        
-        result_traits = {}
-        for trait_name in self._extract_base_traits('combined').keys():
-            values = [core.cognitive_traits.get(trait_name, 0.5) for core in selected_cores]
-            weights = [core.integration_strength for core in selected_cores]
-            
-            if sum(weights) > 0:
-                result_traits[trait_name] = sum(v * w for v, w in zip(values, weights)) / sum(weights)
-            else:
-                result_traits[trait_name] = sum(values) / len(values)
-        
-        fusion_result = {
-            'fusion_id': str(uuid.uuid4())[:8],
-            'models_fused': [c.model_source for c in selected_cores],
-            'fused_traits': result_traits,
-            'algorithm': random.choice(self.fusion_algorithms),
-            'confidence': sum(c.integration_strength for c in selected_cores) / len(selected_cores)
-        }
-        
-        for core in selected_cores:
+        self.fusion_history.append({
+            "timestamp": time.time(),
+            "event_type": event_type,
+            "data": data,
+        })
+
+    def record_response(self, model_source: str, text: str) -> Dict[str, Any]:
+        """Attach a real response to a model core, adding the core if needed."""
+        core = self._core(model_source)
+        if core is None:
+            core = FusionCore(f"core_{len(self.fusion_cores) + 1}", model_source)
+            self.fusion_cores.append(core)
+        traits = core.observe(text)
+        return {"ok": True, "model": model_source, "core_id": core.id,
+                "traits": traits, "stability": core.stability}
+
+    async def fuse_models(self, input_data: Dict[str, Any],
+                          models: List[str] = None) -> Dict[str, Any]:
+        """Fuse recorded responses (optionally supplied inline) by measured weight."""
+        entries: List[Dict[str, Any]] = []
+        if isinstance(input_data, dict):
+            entries = list(input_data.get("responses") or [])
+        elif isinstance(input_data, list):
+            entries = list(input_data)
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            source = entry.get("source") or entry.get("model") or "unknown"
+            text = entry.get("response") or entry.get("text") or ""
+            self.record_response(source, text)
+
+        selected = [core for core in self.fusion_cores
+                    if core.active and (not models or core.model_source in models)]
+        measured = [core for core in selected if core.measured]
+        if not measured:
+            return {
+                "success": False,
+                "error": "no recorded responses to fuse",
+                "models_fused": [],
+                "note": "record a response first (fuse_models with responses, or "
+                        "record_response(model, text)) - traits are never invented",
+            }
+
+        fused = self._engine.fuse([
+            {"source": core.model_source, "response": core.responses[-1]}
+            for core in measured
+        ])
+        for core in measured:
             core.successful_fusions += 1
             core.stability = core.calculate_stability()
-        
-        self._record_fusion_event("fusion", fusion_result)
-        
-        return fusion_result
-    
-    async def extract_cognitive_traits(self, text: str) -> Dict[str, float]:
-        """Extract cognitive traits from text input"""
-        text_hash = hashlib.md5(text.encode()).hexdigest()
-        
-        traits = {
-            'reasoning': random.uniform(0.6, 0.9),
-            'creativity': random.uniform(0.5, 0.85),
-            'depth': random.uniform(0.65, 0.9),
-            'clarity': random.uniform(0.7, 0.95),
-            'coherence': random.uniform(0.75, 0.92),
-            ' originality': random.uniform(0.55, 0.85),
-            'accuracy': random.uniform(0.7, 0.95),
-            'insight': random.uniform(0.6, 0.88)
+
+        result = {
+            "success": True,
+            "fusion_id": uuid.uuid4().hex[:8],
+            "models_fused": [core.model_source for core in measured],
+            "fused": fused["fused"],
+            "winner": fused["winner"],
+            "winner_weight": fused["winner_weight"],
+            "fused_traits": fused["blended_traits"],
+            "cores": fused["cores"],
+            "algorithm": "weighted_consensus",
+            "confidence": round(_mean([core.integration_strength for core in measured]), 3),
         }
-        
-        self.cognitive_weights[text_hash[:8]] = traits
-        
+        self._record_fusion_event("fusion", {
+            "fusion_id": result["fusion_id"],
+            "models_fused": result["models_fused"],
+            "winner": result["winner"],
+            "confidence": result["confidence"],
+        })
+        return result
+
+    async def extract_cognitive_traits(self, text: str) -> Dict[str, float]:
+        """Deterministic trait scores for a piece of text."""
+        traits = _score_response(text or "")
+        digest = hashlib.sha1((text or "").encode("utf-8")).hexdigest()[:8]
+        self.cognitive_weights[digest] = traits
         return traits
-    
+
     async def get_system_status(self) -> Dict[str, Any]:
-        """Get comprehensive fusion system status"""
-        active_cores = [c for c in self.fusion_cores if c.active]
-        stable_cores = [c for c in self.fusion_cores if c.stability > 0.95]
-        
-        total_requests = sum(c.processed_requests for c in self.fusion_cores)
-        total_success = sum(c.successful_fusions for c in self.fusion_cores)
-        
-        overall_stability = sum(c.stability for c in self.fusion_cores) / len(self.fusion_cores)
-        
+        """Status built from real counters and measured stability."""
+        active_cores = [core for core in self.fusion_cores if core.active]
+        measured_cores = [core for core in active_cores if core.measured]
+        stable_cores = [core for core in measured_cores if core.stability > 0.7]
+        total_requests = sum(core.processed_requests for core in self.fusion_cores)
+        total_success = sum(core.successful_fusions for core in self.fusion_cores)
+
         return {
             "fusion_cores": [
                 {
-                    'id': c.id,
-                    'model': c.model_source,
-                    'stability': c.stability,
-                    'active': c.active,
-                    'processed': c.processed_requests,
-                    'integration_strength': c.integration_strength
+                    "id": core.id,
+                    "model": core.model_source,
+                    "stability": core.stability,
+                    "measured": core.measured,
+                    "active": core.active,
+                    "processed": core.processed_requests,
+                    "integration_strength": core.integration_strength,
+                    "traits": core.cognitive_traits,
                 }
-                for c in self.fusion_cores
+                for core in self.fusion_cores
             ],
             "total_cores": len(active_cores),
+            "measured_cores": len(measured_cores),
             "stable_cores": len(stable_cores),
-            "overall_stability": overall_stability,
+            "overall_stability": round(_mean([core.stability for core in active_cores]), 3),
             "total_fusions": total_success,
-            "success_rate": total_success / max(1, total_requests),
+            "success_rate": round(total_success / max(1, total_requests), 3),
             "fusion_history_size": len(self.fusion_history),
-            "status": "operational"
+            "status": "operational",
+            "note": ("cores are unmeasured until a response is recorded for them"
+                     if not measured_cores else "stability is derived from recorded responses"),
         }
-    
-    async def add_model(self, model_source: str, traits: Dict[str, float] = None) -> Dict[str, Any]:
-        """Add a new model to the fusion"""
-        existing = next((c for c in self.fusion_cores if c.model_source == model_source), None)
-        
-        if existing:
-            return {'success': False, 'error': 'Model already exists'}
-        
-        core = FusionCore(f"core_{len(self.fusion_cores)+1}", model_source)
-        core.cognitive_traits = traits or self._extract_base_traits(model_source)
-        
+
+    async def add_model(self, model_source: str,
+                        traits: Dict[str, float] = None) -> Dict[str, Any]:
+        """Add a model core. Traits are only set when explicitly supplied."""
+        if self._core(model_source) is not None:
+            return {"success": False, "error": "Model already exists"}
+
+        core = FusionCore(f"core_{len(self.fusion_cores) + 1}", model_source)
+        if traits:
+            core.cognitive_traits = {name: float(value) for name, value in traits.items()}
+            core.observations.append(dict(core.cognitive_traits))
+            core.integration_strength = round(_mean(list(core.cognitive_traits.values())), 3)
+            core.stability = core.calculate_stability()
         self.fusion_cores.append(core)
-        
         return {
-            'success': True,
-            'core_id': core.id,
-            'model': model_source
+            "success": True,
+            "core_id": core.id,
+            "model": model_source,
+            "measured": core.measured,
+            "note": "" if core.measured else "traits stay empty until a response is recorded",
         }
-    
+
     async def optimize_fusion_weights(self) -> Dict[str, Any]:
-        """Optimize fusion weights based on performance"""
+        """Weight each core by its measured trait mean and fusion success rate."""
+        optimized = {}
         for core in self.fusion_cores:
-            if core.processed_requests > 0:
-                success_rate = core.successful_fusions / core.processed_requests
-                adjustment = (success_rate - 0.5) * 0.1
-                core.integration_strength = max(0.5, min(1.0, core.integration_strength + adjustment))
-        
-        return {
-            'success': True,
-            'optimized_weights': {
-                c.model_source: c.integration_strength for c in self.fusion_cores
-            }
-        }
-    
+            if core.measured:
+                success_rate = core.successful_fusions / max(1, core.processed_requests)
+                core.integration_strength = round(
+                    max(0.0, min(1.0, core.integration_strength * (0.5 + 0.5 * success_rate))), 3)
+            optimized[core.model_source] = core.integration_strength
+        return {"success": True, "optimized_weights": optimized,
+                "measured_models": [c.model_source for c in self.fusion_cores if c.measured]}
+
     async def get_fusion_insights(self) -> Dict[str, Any]:
-        """Get insights about the fusion system"""
-        trait_averages = {}
-        
-        for trait_name in self._extract_base_traits('base').keys():
-            values = [c.cognitive_traits.get(trait_name, 0.5) for c in self.fusion_cores if c.active]
-            if values:
-                trait_averages[trait_name] = sum(values) / len(values)
-        
-        best_model = max(self.fusion_cores, key=lambda c: c.stability)
-        
+        """Trait averages and the strongest core, over measured cores only."""
+        measured = [core for core in self.fusion_cores if core.measured and core.active]
+        if not measured:
+            return {"trait_averages": {}, "best_model": None, "best_stability": 0.0,
+                    "fusion_capability": 0,
+                    "note": "no responses recorded yet - nothing to be insightful about"}
+
+        trait_names = measured[0].cognitive_traits.keys()
+        trait_averages = {
+            name: round(_mean([core.cognitive_traits.get(name, 0.0) for core in measured]), 3)
+            for name in trait_names
+        }
+        best = max(measured, key=lambda core: core.stability)
         return {
-            'trait_averages': trait_averages,
-            'best_model': best_model.model_source,
-            'best_stability': best_model.stability,
-            'fusion_capability': len([c for c in self.fusion_cores if c.active])
+            "trait_averages": trait_averages,
+            "best_model": best.model_source,
+            "best_stability": best.stability,
+            "fusion_capability": len(measured),
         }

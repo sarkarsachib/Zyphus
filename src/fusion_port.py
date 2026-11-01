@@ -6,6 +6,9 @@ Protocol Operations Runtime Terminal - Unified interface for all language ports 
 import asyncio
 import json
 import logging
+import py_compile
+import shutil
+import signal
 import subprocess
 import sys
 import os
@@ -62,6 +65,316 @@ class PortMessage:
     payload: Dict[str, Any]
     timestamp: datetime
     priority: int = 1
+
+# --- real validators and compilers -------------------------------------------
+#
+# These are plain synchronous functions so both the PORT classes below and the
+# agent's tools can use them without an event loop. When a toolchain is absent
+# the result says `available: False` - it never reports a fake success.
+
+def _tool(name: str) -> Optional[str]:
+    return shutil.which(name)
+
+
+def validate_code(code: str, language: str = "python") -> Dict[str, Any]:
+    """Validate source code with the language's own checker.
+
+    Python is compiled in-process; JavaScript goes through `node --check`;
+    Rust through `rustc --emit=metadata`; Go through `gofmt -e`. A language
+    whose toolchain is missing returns `available: False` and `valid: None`.
+    """
+    language = (language or "python").strip().lower()
+    code = code or ""
+    if not code.strip():
+        return {"valid": False, "available": True, "language": language,
+                "message": "no code to validate"}
+
+    if language in ("python", "py"):
+        try:
+            compile(code, "<fusion-port>", "exec")
+        except SyntaxError as exc:
+            return {"valid": False, "available": True, "language": "python",
+                    "message": f"{exc.msg} (line {exc.lineno}, column {exc.offset})",
+                    "line": exc.lineno, "column": exc.offset}
+        return {"valid": True, "available": True, "language": "python",
+                "message": "syntax ok"}
+
+    if language in ("javascript", "js", "node", "mjs"):
+        node = _tool("node")
+        if not node:
+            return {"valid": None, "available": False, "language": "javascript",
+                    "message": "node is not installed"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "check.mjs")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(code)
+            proc = subprocess.run([node, "--check", path], capture_output=True,
+                                  text=True, timeout=30)
+        return {"valid": proc.returncode == 0, "available": True,
+                "language": "javascript", "message": (proc.stderr or "syntax ok").strip(),
+                "stderr": proc.stderr.strip()}
+
+    if language in ("rust", "rs"):
+        rustc = _tool("rustc")
+        if not rustc:
+            return {"valid": None, "available": False, "language": "rust",
+                    "message": "rustc is not installed"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "check.rs")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(code)
+            proc = subprocess.run(
+                [rustc, "--edition", "2021", "--crate-type", "lib", "--emit=metadata",
+                 "-o", os.path.join(tmp, "check.rmeta"), path],
+                capture_output=True, text=True, timeout=120)
+        return {"valid": proc.returncode == 0, "available": True, "language": "rust",
+                "message": (proc.stderr or "compiles").strip(),
+                "stderr": proc.stderr.strip()}
+
+    if language in ("go", "golang"):
+        gofmt = _tool("gofmt")
+        if not gofmt:
+            return {"valid": None, "available": False, "language": "go",
+                    "message": "gofmt is not installed"}
+        proc = subprocess.run([gofmt, "-e"], input=code, capture_output=True,
+                              text=True, timeout=30)
+        return {"valid": proc.returncode == 0, "available": True, "language": "go",
+                "message": (proc.stderr or "syntax ok").strip(),
+                "stderr": proc.stderr.strip()}
+
+    return {"valid": None, "available": False, "language": language,
+            "message": f"no validator for {language}"}
+
+
+def compile_code(code: str, language: str = "python",
+                 out_dir: Optional[str] = None) -> Dict[str, Any]:
+    """Build code with the language's own compiler and report the artifact."""
+    language = (language or "python").strip().lower()
+    code = code or ""
+    out_dir = out_dir or tempfile.mkdtemp(prefix="fusion-port-")
+    os.makedirs(out_dir, exist_ok=True)
+
+    if language in ("python", "py"):
+        source = os.path.join(out_dir, "compiled_source.py")
+        with open(source, "w", encoding="utf-8") as handle:
+            handle.write(code)
+        artifact = os.path.join(out_dir, "compiled_source.pyc")
+        try:
+            py_compile.compile(source, cfile=artifact, doraise=True)
+        except py_compile.PyCompileError as exc:
+            return {"compiled": False, "available": True, "language": "python",
+                    "message": str(exc)}
+        return {"compiled": True, "available": True, "language": "python",
+                "artifact": artifact, "bytes": os.path.getsize(artifact),
+                "message": "bytecode written"}
+
+    if language in ("javascript", "js", "node", "mjs"):
+        checked = validate_code(code, "javascript")
+        return {"compiled": checked.get("valid"), "available": checked["available"],
+                "language": "javascript", "artifact": None,
+                "message": "JavaScript is interpreted - syntax checked with node --check"
+                           if checked["available"] else checked["message"]}
+
+    if language in ("rust", "rs"):
+        cargo = _tool("cargo")
+        if not cargo:
+            return {"compiled": None, "available": False, "language": "rust",
+                    "message": "cargo is not installed"}
+        project = os.path.join(out_dir, "rust_project")
+        os.makedirs(os.path.join(project, "src"), exist_ok=True)
+        with open(os.path.join(project, "Cargo.toml"), "w", encoding="utf-8") as handle:
+            handle.write('[package]\nname = "fusion_check"\nversion = "0.1.0"\n'
+                         'edition = "2021"\n\n[dependencies]\n')
+        with open(os.path.join(project, "src", "main.rs"), "w", encoding="utf-8") as handle:
+            handle.write(code)
+        proc = subprocess.run([cargo, "build", "--offline"], cwd=project,
+                              capture_output=True, text=True, timeout=300)
+        binary = os.path.join(project, "target", "debug", "fusion_check")
+        return {"compiled": proc.returncode == 0, "available": True, "language": "rust",
+                "artifact": binary if os.path.exists(binary) else None,
+                "message": (proc.stderr or "built").strip()[-2000:]}
+
+    if language in ("go", "golang"):
+        go = _tool("go")
+        if not go:
+            return {"compiled": None, "available": False, "language": "go",
+                    "message": "go is not installed"}
+        source = os.path.join(out_dir, "main.go")
+        with open(source, "w", encoding="utf-8") as handle:
+            handle.write(code)
+        binary = os.path.join(out_dir, "main")
+        proc = subprocess.run([go, "build", "-o", binary, source], cwd=out_dir,
+                              capture_output=True, text=True, timeout=300)
+        return {"compiled": proc.returncode == 0, "available": True, "language": "go",
+                "artifact": binary if os.path.exists(binary) else None,
+                "message": (proc.stderr or "built").strip()[-2000:]}
+
+    return {"compiled": None, "available": False, "language": language,
+            "message": f"no compiler for {language}"}
+
+
+# --- real process management -------------------------------------------------
+
+_CLOCK_TICKS = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+_PAGE_SIZE = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
+
+
+def _proc_stat(pid: int) -> Optional[Dict[str, Any]]:
+    try:
+        with open(f"/proc/{pid}/stat", "r", encoding="utf-8", errors="replace") as handle:
+            raw = handle.read()
+    except (FileNotFoundError, ProcessLookupError, PermissionError):
+        return None
+    close = raw.rfind(")")
+    if close < 0:
+        return None
+    name = raw[raw.find("(") + 1:close]
+    fields = raw[close + 2:].split()
+    if len(fields) < 22:
+        return None
+    return {
+        "pid": pid,
+        "name": name,
+        "state": fields[0],
+        "cpu_ticks": int(fields[11]) + int(fields[12]),
+        "threads": int(fields[17]),
+        "starttime": int(fields[19]),
+        "rss_bytes": int(fields[21]) * _PAGE_SIZE,
+    }
+
+
+def _proc_cmdline(pid: int) -> List[str]:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            raw = handle.read()
+    except (FileNotFoundError, ProcessLookupError, PermissionError):
+        return []
+    return [part.decode("utf-8", "replace") for part in raw.split(b"\0") if part]
+
+
+def _uptime() -> float:
+    try:
+        with open("/proc/uptime", "r", encoding="utf-8") as handle:
+            return float(handle.read().split()[0])
+    except (FileNotFoundError, ValueError, IndexError):
+        return 0.0
+
+
+def list_processes(limit: int = 25, sort: str = "rss") -> Dict[str, Any]:
+    """List live processes from /proc, largest memory footprint first by default."""
+    processes = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        snapshot = _proc_stat(int(entry))
+        if snapshot is None:
+            continue
+        snapshot["cmdline"] = " ".join(_proc_cmdline(int(entry)))[:300]
+        snapshot["memory_mb"] = round(snapshot["rss_bytes"] / (1024 * 1024), 2)
+        processes.append(snapshot)
+
+    if sort in ("pid",):
+        processes.sort(key=lambda item: item["pid"])
+    elif sort in ("cpu", "ticks"):
+        processes.sort(key=lambda item: item["cpu_ticks"], reverse=True)
+    elif sort in ("name",):
+        processes.sort(key=lambda item: item["name"])
+    else:
+        processes.sort(key=lambda item: item["rss_bytes"], reverse=True)
+
+    limit = max(1, int(limit))
+    return {"ok": True, "count": len(processes), "returned": min(limit, len(processes)),
+            "processes": processes[:limit]}
+
+
+def process_info(pid: int) -> Dict[str, Any]:
+    """Details for one process: state, memory, threads, command and age."""
+    pid = int(pid)
+    snapshot = _proc_stat(pid)
+    if snapshot is None:
+        return {"ok": False, "error": f"no process with pid {pid}"}
+    try:
+        cwd = os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        cwd = ""
+    try:
+        exe = os.readlink(f"/proc/{pid}/exe")
+    except OSError:
+        exe = ""
+    elapsed = max(0.0, _uptime() - snapshot["starttime"] / _CLOCK_TICKS)
+    return {
+        "ok": True,
+        "pid": pid,
+        "name": snapshot["name"],
+        "state": snapshot["state"],
+        "threads": snapshot["threads"],
+        "memory_mb": round(snapshot["rss_bytes"] / (1024 * 1024), 2),
+        "cpu_seconds": round(snapshot["cpu_ticks"] / _CLOCK_TICKS, 3),
+        "elapsed_seconds": round(elapsed, 1),
+        "cmdline": " ".join(_proc_cmdline(pid))[:2000],
+        "cwd": cwd,
+        "exe": exe,
+    }
+
+
+def monitor_process(pid: int, interval: float = 0.2) -> Dict[str, Any]:
+    """Sample a live process twice and report CPU use over that interval."""
+    pid = int(pid)
+    interval = max(0.05, min(5.0, float(interval)))
+    first = _proc_stat(pid)
+    if first is None:
+        return {"ok": False, "error": f"no process with pid {pid}"}
+    time.sleep(interval)
+    second = _proc_stat(pid)
+    if second is None:
+        return {"ok": False, "error": f"process {pid} exited during the sample"}
+    delta_ticks = max(0, second["cpu_ticks"] - first["cpu_ticks"])
+    cpu_percent = (delta_ticks / _CLOCK_TICKS) / interval * 100.0
+    return {"ok": True, "pid": pid, "name": second["name"], "state": second["state"],
+            "cpu_percent": round(cpu_percent, 1),
+            "memory_mb": round(second["rss_bytes"] / (1024 * 1024), 2),
+            "threads": second["threads"], "interval_seconds": interval}
+
+
+def signal_process(pid: int, signal_name: str = "TERM") -> Dict[str, Any]:
+    """Send a signal to a process and report whether it is still running."""
+    pid = int(pid)
+    if pid <= 0:
+        return {"ok": False, "error": "pid must be positive"}
+    name = signal_name.strip().upper()
+    if not name.startswith("SIG"):
+        name = f"SIG{name}"
+    if not hasattr(signal, name):
+        return {"ok": False, "error": f"unknown signal: {signal_name}"}
+    try:
+        os.kill(pid, getattr(signal, name))
+    except ProcessLookupError:
+        return {"ok": False, "error": f"no process with pid {pid}"}
+    except PermissionError as exc:
+        return {"ok": False, "error": f"not permitted: {exc}"}
+
+    time.sleep(0.2)
+    snapshot = _proc_stat(pid)
+    still_running = snapshot is not None and snapshot["state"] != "Z"
+    return {"ok": True, "pid": pid, "signal": name, "running": still_running}
+
+
+def process_management(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """The shared body of SystemPORT._process_management."""
+    action = str(payload.get("process_operation") or payload.get("action") or "list").lower()
+    if action in ("list", "ps"):
+        return list_processes(limit=int(payload.get("limit") or 25),
+                              sort=str(payload.get("sort") or "rss"))
+    if action in ("info", "stat", "status"):
+        return process_info(int(payload.get("pid") or 0))
+    if action in ("monitor", "sample"):
+        return monitor_process(int(payload.get("pid") or 0),
+                               float(payload.get("interval") or 0.2))
+    if action in ("kill", "signal", "terminate"):
+        return signal_process(int(payload.get("pid") or 0),
+                              str(payload.get("signal") or "TERM"))
+    return {"ok": False, "error": f"unknown process operation: {action}"}
+
 
 class BasePORT(ABC):
     """Base class for all PORTs"""
@@ -425,14 +738,12 @@ edition = "2021"
         pass
     
     async def _validate_code(self, code: str) -> Dict[str, Any]:
-        """Validate code syntax"""
-        # Implementation would depend on language-specific validators
-        return {'valid': True, 'message': 'Validation not implemented'}
+        """Validate code syntax with this PORT's language toolchain"""
+        return await asyncio.to_thread(validate_code, code, self.language)
     
     async def _compile_code(self, code: str) -> Dict[str, Any]:
-        """Compile code (for compiled languages)"""
-        # Implementation would depend on language-specific compilers
-        return {'compiled': True, 'message': 'Compilation not implemented'}
+        """Compile code with this PORT's language toolchain"""
+        return await asyncio.to_thread(compile_code, code, self.language, self.temp_dir)
 
 class SystemPORT(BasePORT):
     """PORT for system-level operations"""
@@ -567,9 +878,8 @@ class SystemPORT(BasePORT):
             return {'error': str(e)}
     
     async def _process_management(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Manage system processes"""
-        # Implementation would include process listing, killing, monitoring
-        return {'message': 'Process management not implemented'}
+        """Manage system processes: list, inspect, sample or signal one"""
+        return await asyncio.to_thread(process_management, payload)
     
     async def _get_system_info(self) -> Dict[str, Any]:
         """Get system information"""

@@ -497,6 +497,113 @@ def rag_tool(action: str = "query", text: str = "", path: str = "", source: str 
     return ToolResult(False, error=f"unknown rag action: {action}")
 
 
+# --- vector memory, code toolchains, processes -------------------------------
+
+
+def vector_memory(action: str = "search", text: str = "", label: str = "",
+                  namespace: str = "", top_k: int = 5, embedding: str = "",
+                  item_id: str = "", min_score: float = 0.0,
+                  path: str = "") -> ToolResult:
+    """Durable vector memory: store embeddings and search them by similarity."""
+    from src.hybrid_memory_system import HybridMemorySystem
+
+    system = HybridMemorySystem(
+        _resolve(path) if path else os.path.join(REPO_ROOT, "devmind", "agent", "hybrid_memory"))
+    action = (action or "search").strip().lower()
+
+    try:
+        if action in ("store", "add", "remember"):
+            payload: Dict[str, Any] = {"text": text, "label": label,
+                                       "namespace": namespace or "default"}
+            if embedding.strip():
+                payload["embedding"] = json.loads(embedding)
+            data = system.vector_add_embedding(payload)
+            return ToolResult(True, output=f"stored {data['id']} in {data['namespace']} "
+                                           f"({data['dim']} dimensions)", meta=data)
+
+        if action in ("search", "query", "find"):
+            if embedding.strip():
+                hits = system.vector_search_embeddings(
+                    json.loads(embedding), top_k=int(top_k),
+                    namespace=namespace or None, min_score=float(min_score))
+            else:
+                hits = system.vector_search_text(
+                    text, top_k=int(top_k), namespace=namespace or None,
+                    min_score=float(min_score))
+            if not hits:
+                return ToolResult(True, output="no vectors matched", meta={"hits": []})
+            blocks = [
+                f"{hit['score']:.4f}  {hit['namespace']}/{hit['label'] or hit['id']}\n"
+                f"{_truncate(hit['text'], 800)}"
+                for hit in hits
+            ]
+            return ToolResult(True, output=f"{len(hits)} hits for {text!r}\n\n"
+                                           + "\n\n---\n\n".join(blocks),
+                              meta={"hits": hits})
+
+        if action in ("get", "show"):
+            if not item_id:
+                return ToolResult(False, error="get needs an item_id")
+            data = system.vector_get(item_id)
+            if not data:
+                return ToolResult(False, error=f"no vector with id {item_id}")
+            return _payload_result({"ok": True, **data})
+
+        if action in ("delete", "forget", "remove"):
+            data = system.vector_delete(item_id=item_id or None,
+                                        namespace=None if item_id else (namespace or None),
+                                        label=label or None)
+            return ToolResult(True, output=f"removed {data['removed']} vectors", meta=data)
+
+        if action in ("stats", "status"):
+            return _payload_result(system.vector_stats())
+
+    except ValueError as exc:
+        return ToolResult(False, error=str(exc))
+
+    return ToolResult(False, error=f"unknown vector_memory action: {action}")
+
+
+def code_check(action: str = "validate", code: str = "", path: str = "",
+               language: str = "python") -> ToolResult:
+    """Validate or compile code with the real toolchain for its language."""
+    from src.fusion_port import compile_code, validate_code
+
+    if path and not code:
+        full = _resolve(path)
+        if not os.path.isfile(full):
+            return ToolResult(False, error=f"not a file: {full}")
+        with open(full, "r", encoding="utf-8", errors="replace") as handle:
+            code = handle.read()
+        if full.endswith((".js", ".mjs", ".cjs")):
+            language = "javascript"
+        elif full.endswith(".rs"):
+            language = "rust"
+        elif full.endswith(".go"):
+            language = "go"
+
+    if not code.strip():
+        return ToolResult(False, error="pass code or a path to check")
+
+    data = (compile_code(code, language) if action.strip().lower() in ("compile", "build")
+            else validate_code(code, language))
+    passed = data.get("valid") if "valid" in data else data.get("compiled")
+    if passed is True:
+        return ToolResult(True, output=json.dumps(data, indent=2), meta=data)
+    reason = data.get("message") or "check failed"
+    return ToolResult(False, error=reason, output=json.dumps(data, indent=2), meta=data)
+
+
+def process(action: str = "list", pid: int = 0, signal_name: str = "TERM",
+            limit: int = 25, sort: str = "rss", interval: float = 0.2) -> ToolResult:
+    """List, inspect, sample or signal processes in the container."""
+    from src.fusion_port import process_management
+
+    data = process_management({"action": action, "pid": pid, "signal": signal_name,
+                               "limit": limit, "sort": sort, "interval": interval})
+    return _payload_result(data)
+
+
 # --- models, custom APIs and connectors --------------------------------------
 
 
@@ -643,6 +750,33 @@ def build_registry() -> ToolRegistry:
          "payload": "str raw JSON body to send instead (optional)",
          "path": "str path for a github connector call (optional)",
          "description": "str what the connector is for (optional)"}, connector))
+
+    registry.register(Tool(
+        "vector_memory", "Durable vector memory: store text or an explicit embedding, then search "
+                         "it by cosine similarity. Deterministic hashed embedding, no model call.",
+        {"action": "str: store|search|get|delete|stats (optional, default search)",
+         "text": "str to store or search for",
+         "label": "str optional label",
+         "namespace": "str optional partition",
+         "top_k": "int how many hits (optional, default 5)",
+         "embedding": "str JSON array for an explicit vector (optional)",
+         "item_id": "str vector id (for get/delete)",
+         "min_score": "float minimum cosine score (optional)",
+         "path": "str store directory (optional)"}, vector_memory))
+    registry.register(Tool(
+        "code_check", "Validate or compile code with the language's own toolchain "
+                      "(python, javascript, rust, go). Reports unavailable when a toolchain is "
+                      "missing - it never fakes a pass.",
+        {"action": "str: validate|compile (optional, default validate)",
+         "code": "str source code", "path": "str file to read instead (optional)",
+         "language": "str: python|javascript|rust|go (optional)"}, code_check))
+    registry.register(Tool(
+        "process", "Process control in the container: list, inspect one, sample its CPU use, or "
+                   "send it a signal.",
+        {"action": "str: list|info|monitor|kill (optional, default list)",
+         "pid": "int process id (for info/monitor/kill)", "signal_name": "str (optional, default TERM)",
+         "limit": "int (optional, default 25)", "sort": "str rss|cpu|pid|name (optional)",
+         "interval": "float seconds for monitor (optional, default 0.2)"}, process))
 
     from src.agent import cognition
 
