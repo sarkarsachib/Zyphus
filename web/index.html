@@ -250,6 +250,12 @@ code { font-family: ui-monospace, monospace; color: #b8c8dc; }
     <div class="pills" id="agent-counts"></div>
   </div>
   <div class="panel">
+    <div class="panel-head"><h2>Cognitive Field</h2><div class="badge" id="field-mode"><span class="dot"></span><span id="field-mode-text">…</span></div></div>
+    <div id="field-bars"></div>
+    <div class="pills" id="field-signals" style="margin-top:10px"></div>
+    <div class="pills" id="field-meta" style="margin-top:8px"></div>
+  </div>
+  <div class="panel">
     <div class="panel-head"><h2>Drive the Agent</h2><div class="badge" id="control-state"><span class="dot"></span><span id="control-state-text">…</span></div></div>
     <div class="row">
       <input id="token" class="input" type="password" autocomplete="off" placeholder="control token" style="flex:1 1 200px" />
@@ -461,6 +467,37 @@ function renderAgent(data, target, limit) {
       <div class="out">${esc((a.output||a.error||"").slice(0,400))}</div>
     </div>`).join("") : '<div class="action"><span class="hint">no calls yet</span></div>';
 }
+function renderField(field) {
+  const bars = $("field-bars");
+  if (!field || !field.activations) {
+    bars.innerHTML = '<div class="action"><span class="hint">no field state</span></div>';
+    return;
+  }
+  const acts = field.activations;
+  bars.innerHTML = Object.entries(acts).sort((a,b) => b[1]-a[1]).map(([name, val]) => `
+    <div class="action" style="padding:7px 10px">
+      <div class="head">
+        <span class="tool">${esc(name)}${name === field.mode ? " · active" : ""}</span>
+        <span class="meta">${val.toFixed(2)}${name === field.mode ? " · settled" : ""}</span>
+      </div>
+      <div style="height:6px;border-radius:3px;background:var(--line);margin-top:6px;overflow:hidden">
+        <div style="height:100%;width:${Math.round(Math.min(1, val)*100)}%;background:${name === field.mode ? "var(--accent)" : "var(--line-2)"}"></div>
+      </div>
+    </div>`).join("");
+  $("field-signals").innerHTML = Object.entries(field.signals || {})
+    .map(([k, v]) => `<span>${esc(k)} <b>${Number(v).toFixed(2)}</b></span>`).join("");
+  const meta = field.metacognition || {};
+  const cal = Object.entries(meta.calibration || {})
+    .map(([k, v]) => `<span>${esc(k)} conf <b>${Number(v.confidence).toFixed(2)}</b> · n ${v.attempts}</span>`)
+    .join("");
+  $("field-meta").innerHTML = `<span>self-error <b>${Number(meta.surprise || 0).toFixed(2)}</b></span>`
+    + `<span>steps <b>${field.steps ?? 0}</b></span>` + cal;
+  const badge = $("field-mode");
+  badge.classList.remove("ok","bad");
+  if (Number(field.dominance ?? 0) > 0.1) badge.classList.add("ok");
+  $("field-mode-text").textContent = `${field.mode} · dominance ${Number(field.dominance ?? 0).toFixed(2)}`;
+}
+
 async function loadAgent() {
   try {
     const d = await (await fetch("/api/agent")).json();
@@ -473,6 +510,7 @@ async function loadAgent() {
       + `<span>brain <b>${esc(d.brain)}</b></span>`
       + `<span>tick <b>${Math.round(d.interval_seconds)}s</b></span>`;
     renderAgent(d, $("agent-actions"));
+    renderField(d.field);
     $("agent-pending").innerHTML = (d.pending_tasks||[]).length
       ? d.pending_tasks.map(t=>`<div class="action"><span class="tool">${esc(t.title)}</span> <span class="meta">${t.status} · ${esc(t.id)}</span></div>`).join("")
       : '<div class="action"><span class="hint">queue empty</span></div>';

@@ -1,0 +1,79 @@
+{
+  "activation": {
+    "deliberate": 0.662638,
+    "explore": 0.666639,
+    "inhibit": 1e-06,
+    "plan": 0.661037
+  },
+  "metacognition": {
+    "abs_error": {
+      "deliberate": 0.0,
+      "explore": 0.0,
+      "inhibit": 0.0,
+      "plan": 0.7733
+    },
+    "attempts": {
+      "deliberate": 0,
+      "explore": 0,
+      "inhibit": 0,
+      "plan": 2
+    },
+    "gain": {
+      "deliberate": 1.0,
+      "explore": 1.0,
+      "inhibit": 1.0,
+      "plan": 1.1933
+    },
+    "successes": {
+      "deliberate": 0,
+      "explore": 0,
+      "inhibit": 0,
+      "plan": 2
+    },
+    "surprise": 0.2389
+  },
+  "mode": "plan",
+  "previous_mode": "explore",
+  "satiation": {
+    "deliberate": 0.025000000000000033,
+    "explore": 0.03750000000000003,
+    "inhibit": 0.0,
+    "plan": 0.6500000000000017
+  },
+  "signals": {
+    "backlog": 0.0,
+    "competence": 0.7667,
+    "fatigue": 0.525,
+    "novelty": 0.8571,
+    "stagnation": 0.0,
+    "surprise": 0.176,
+    "task": 1.0,
+    "uncertainty": 1.0
+  },
+  "steps": 3,
+  "transitions": [
+    {
+      "activations": {
+        "deliberate": 0.1625,
+        "explore": 0.4167,
+        "inhibit": 0.2848,
+        "plan": 0.0481
+      },
+      "at": "2026-11-01T17:04:08",
+      "from": "plan",
+      "to": "explore"
+    },
+    {
+      "activations": {
+        "deliberate": 0.6521,
+        "explore": 0.7126,
+        "inhibit": 0.0203,
+        "plan": 0.7932
+      },
+      "at": "2026-11-01T17:04:16",
+      "from": "explore",
+      "to": "plan"
+    }
+  ],
+  "updated_at": "2026-11-01T17:06:31"
+}

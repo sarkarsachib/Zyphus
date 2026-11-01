@@ -151,8 +151,30 @@ engine from scratch.
   into a short chain of tool calls, and proposes its own work when the queue is empty (`self:inspect`,
   `self:reflect`, `self:voice`, `self:selftest`, `self:inventory`, `self:improve`,
   `self:remember`, `self:explore`, `self:git`, `self:system`); it remembers what it has already read
-  so its curiosity moves instead of repeating. `build_brain()` returns it, or `ModelBrain`
-  (`model_brain.py`) when `OPENAI_API_KEY` is set - any model failure falls back to the local brain.
+  so its curiosity moves instead of repeating. It is now the *composer* the field brain calls, not the
+  brain the loop gets: `build_brain()` returns `AdaptiveFieldBrain`. `ModelBrain` (`model_brain.py`) is
+  one candidate voice inside the field, not a replacement for it.
+- `field.py` - the adaptive cognitive field. Four attractors (`plan`, `explore`, `deliberate`,
+  `inhibit`) compete continuously: each is excited by named signals (task, backlog, novelty,
+  uncertainty, surprise, stagnation, competence, fatigue) through the `COUPLING` matrix, suppressed by
+  the others (`INHIBITION`) and by its own use (`SATIATION`), and integrated in real time (`TAU`,
+  `STEP_SECONDS`, `HORIZON_SECONDS`), so a long gap relaxes the field and a burst of surprise excites
+  deliberation. **The mode is whichever attractor is in equilibrium - nothing branches on task text and
+  nothing rotates.** A mode can only be displaced by `HYSTERESIS`, which stops flicker. `Metacognition`
+  states a confidence before a mode acts, scores it afterwards, and moves that mode's `gain`, so a mode
+  whose calls fail loses its pull on the field. State persists to `devmind/agent/field.json`
+  (`ZYPHUS_FIELD_PATH` overrides), which is runtime state like the notes - not configuration.
+- `field_brain.py` - the brain on that field, and what `build_brain()` returns (`name =
+  "adaptive-field"`). `plan()` perceives the task, settles the field, then acts through the settled
+  mode: `plan` composes and runs, `explore` reads a file before overwriting it, `deliberate` composes
+  alternatives (direct / retrieval-grounded / model) and keeps the one with the best predicted
+  success against predicted risk, `inhibit` runs the plan and queues a consolidation follow-up.
+  `propose()` picks idle work from the same equilibrium (explore -> read something unread, deliberate ->
+  hypotheses or a structure, plan -> AST analysis, inhibit -> reflection). `observe(task, result)` is
+  the loop's new hook: it scores the prediction, records per-tool success, appends to the field's
+  history and saves the state. `snapshot()` feeds `/api/agent` (`field`) and `agent field`.
+  The write-before-read guard is deliberate: a `write_file` candidate is scored from its kind alone
+  (0.45 / 3.0) because a diff that does not exist yet cannot give a real blast radius.
 - `loop.py` - one tick = claim a task, plan it, run the tools, record everything; an idle tick proposes
   self-directed work, a finished task can queue its own follow-up (`brain.follow_up`, e.g. inspect then
   reflect), and the wait between ticks shortens when tasks are waiting. `run_specific`/`submit` run one
@@ -190,7 +212,9 @@ engine from scratch.
   `info` (state, threads, RSS, cmdline, cwd, exe, age), `monitor` (CPU% over a sampled interval) and
   `kill` (any signal, reporting whether the process is still alive). This is the same code the
   System PORT's `process_management` operation now uses instead of its old stub.
-- `cli.py` - `python src/main.py agent status|tools|tasks|run|tick|forever`.
+- `cli.py` - `python src/main.py agent status|tools|tasks|run|tick|forever|field`. `agent field` prints
+  the activations, the perceived signals and the metacognitive calibration - the quickest way to see why
+  the brain did what it did.
 
 Task instruction prefixes: `shell:<command>`, `fetch:<url>`, `look:<image path or URL>`, `say:<text>`,
 `git:`, `analyze:<path>`, `memory: store|recall|list|forget`, `eval:<expression>`, `system:`,
@@ -230,7 +254,12 @@ continued on its own.
 docker compose -f docker-compose.base44.yml exec zyphus python -m pytest tests/ -v
 ```
 
-173 tests cover the nine test suites:
+206 tests cover the suites below:
+- `tests/test_field.py` - the field and the brain on it: which signal combination settles into which
+  mode, negative coupling, satiation, relaxation after a long gap, hysteresis, gain loss on
+  overconfidence, persistence across a restart (and a corrupt state file being ignored), mode-to-work
+  mapping, alternatives chosen by predicted risk, read-before-write, and `observe` scoring a real
+  outcome. It monkeypatches `substrate.last` so a global from another suite cannot decide the mode.
 - `tests/test_hybrid_memory.py` - deterministic embedding, store/search ranking, namespace filters,
   idempotent re-index, delete/get/stats, persistence across instances
 - `tests/test_fusion_port.py` - real Python/JavaScript validation (and unavailable-toolchain honesty),

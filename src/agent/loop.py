@@ -88,6 +88,21 @@ class AgentLoop:
         return {"task_id": task_id, **self.run_specific(task_id)}
 
     def _run_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        result = self._execute_task(task)
+        self._observe(task, result)
+        return result
+
+    def _observe(self, task: Dict[str, Any], result: Dict[str, Any]) -> None:
+        """Let a brain that keeps a field score its own prediction against reality."""
+        observe = getattr(self.brain, "observe", None)
+        if observe is None:
+            return
+        try:
+            observe(task, result)
+        except Exception as exc:  # an observation must never break the tick
+            logger.warning("observation failed for %s: %s", task["id"], exc)
+
+    def _execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         calls: List[ToolCall] = []
         try:
             calls = self.brain.plan(task)
@@ -244,6 +259,11 @@ class AgentLoop:
         from src.agent import senses
 
         utterances = senses.utterances(5)
+        snapshot = getattr(self.brain, "snapshot", None)
+        try:
+            field_state = snapshot() if callable(snapshot) else None
+        except Exception as exc:
+            field_state = {"error": f"{type(exc).__name__}: {exc}"}
         return {
             "running": self.running,
             "brain": self.brain.name,
@@ -255,6 +275,7 @@ class AgentLoop:
             "queue": self.store.counts(),
             "queue_path": self.store.path,
             "tools": self.registry.catalog(),
+            "field": field_state,
             "vitals": self.body(),
             "voice": {
                 "latest": utterances[0] if utterances else None,

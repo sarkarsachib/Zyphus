@@ -36,6 +36,32 @@ def status_cmd():
         click.echo(f"{action['created_at']}  {flag} {action['tool']:<14} {args[:110]}")
 
 
+@agent.command("field")
+def field_cmd():
+    """Show the cognitive field: what is activated, what won, how wrong it has been."""
+    from src.agent.field import summarize
+
+    brain = get_loop().brain
+    snapshot = brain.snapshot() if hasattr(brain, "snapshot") else None
+    if not snapshot:
+        click.echo(f"brain {brain.name} keeps no field")
+        return
+    click.echo(click.style("--- Cognitive field ---", fg="cyan"))
+    click.echo(f"mode:      {snapshot['mode']}"
+               + (f" (from {snapshot['previous_mode']})" if snapshot.get("previous_mode") else ""))
+    click.echo(f"dominance: {snapshot['dominance']:.2f}")
+    for line in summarize(snapshot):
+        click.echo("  " + line)
+    click.echo(click.style("\nsignals", fg="cyan"))
+    for name, value in snapshot["signals"].items():
+        click.echo(f"  {name:<12} {value:.2f}")
+    meta = snapshot["metacognition"]
+    click.echo(click.style(f"\nmetacognition (surprise {meta['surprise']:.2f})", fg="cyan"))
+    for mode, stats in meta["calibration"].items():
+        click.echo(f"  {mode:<10} attempts {stats['attempts']:<3} confidence "
+                   f"{stats['confidence']:.2f} gain {stats['gain']:.2f} error {stats['mean_error']:.2f}")
+
+
 @agent.command("tools")
 def tools_cmd():
     """List the tools the agent can call."""

@@ -9,10 +9,11 @@ body out loud. It keeps a memory of what it has already looked at, so its
 curiosity moves instead of repeating itself, and it can chain a follow-up task
 after a finished one.
 
-`build_brain()` returns this brain by default, and a model-backed brain
-(`src/agent/model_brain.py`) when an API key for one is present - the same loop,
-the same tools, a stronger planner. The loop only needs `plan(task)`,
-`propose(context)` and the optional `follow_up(task, outcome)`.
+`build_brain()` now returns `AdaptiveFieldBrain` (`src/agent/field_brain.py`),
+which settles a cognitive field and thinks through the mode it lands in, using
+this brain to compose plans and a model-backed brain (`src/agent/model_brain.py`)
+as one candidate voice. The loop only needs `plan(task)`, `propose(context)`,
+`follow_up(task, outcome)` and the optional `observe(task, result)`.
 """
 
 import json
@@ -618,9 +619,12 @@ class DeliberativeBrain:
 
 
 def build_brain():
-    """The strongest brain available: a real model when one is configured."""
+    """One adaptive field; a configured model is a voice inside it, not the brain."""
+    from src.agent.field import CognitiveField
+    from src.agent.field_brain import AdaptiveFieldBrain
     from src.agent.model_brain import ModelBrain
 
-    fallback = DeliberativeBrain()
-    model = ModelBrain(fallback=fallback)
-    return model if model.available() else fallback
+    composer = DeliberativeBrain()
+    return AdaptiveFieldBrain(composer=composer,
+                              model=ModelBrain(fallback=composer),
+                              field=CognitiveField(autoload=True))
