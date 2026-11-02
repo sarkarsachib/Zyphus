@@ -256,6 +256,11 @@ code { font-family: ui-monospace, monospace; color: #b8c8dc; }
     <div class="pills" id="field-meta" style="margin-top:8px"></div>
   </div>
   <div class="panel">
+    <div class="panel-head"><h2>Consolidation</h2><div class="badge" id="consolidation-badge"><span class="dot"></span><span id="consolidation-text">…</span></div></div>
+    <div class="pills" id="consolidation-pills"></div>
+    <div id="consolidation-skills" style="margin-top:10px"></div>
+  </div>
+  <div class="panel">
     <div class="panel-head"><h2>Drive the Agent</h2><div class="badge" id="control-state"><span class="dot"></span><span id="control-state-text">…</span></div></div>
     <div class="row">
       <input id="token" class="input" type="password" autocomplete="off" placeholder="control token" style="flex:1 1 200px" />
@@ -498,6 +503,27 @@ function renderField(field) {
   $("field-mode-text").textContent = `${field.mode} · dominance ${Number(field.dominance ?? 0).toFixed(2)}`;
 }
 
+function renderConsolidation(memory) {
+  const badge = $("consolidation-badge"), last = memory?.last;
+  badge.classList.remove("ok","bad");
+  if (!last) {
+    badge.classList.add("bad");
+    $("consolidation-text").textContent = "no pass yet";
+    $("consolidation-pills").innerHTML = "";
+    $("consolidation-skills").innerHTML = '<div class="action"><span class="hint">nothing consolidated yet</span></div>';
+    return;
+  }
+  badge.classList.add("ok");
+  $("consolidation-text").textContent = `${memory.passes} pass${memory.passes === 1 ? "" : "es"} · ${last.replayed} replayed`;
+  $("consolidation-pills").innerHTML = `<span>promoted <b>${(last.promoted||[]).length}</b></span>`
+    + `<span>weak <b>${(last.weak||[]).length}</b></span>`
+    + `<span>at <b>${esc(String(last.ran_at||"").replace("T"," ").replace("+00:00",""))}</b></span>`;
+  const skills = (memory.skills || []).slice(0, 5);
+  $("consolidation-skills").innerHTML = skills.length
+    ? skills.map(s => `<div class="action"><span class="tool">${esc(s.tool)}</span><span class="meta">${Math.round(Number(s.success_rate||0)*100)}% · ${s.attempts} runs · ${Math.round(Number(s.mean_ms||0))}ms${s.promoted_at ? " · promoted" : ""}</span></div>`).join("")
+    : '<div class="action"><span class="hint">no measured competence yet</span></div>';
+}
+
 async function loadAgent() {
   try {
     const d = await (await fetch("/api/agent")).json();
@@ -511,6 +537,7 @@ async function loadAgent() {
       + `<span>tick <b>${Math.round(d.interval_seconds)}s</b></span>`;
     renderAgent(d, $("agent-actions"));
     renderField(d.field);
+    renderConsolidation(d.consolidation);
     $("agent-pending").innerHTML = (d.pending_tasks||[]).length
       ? d.pending_tasks.map(t=>`<div class="action"><span class="tool">${esc(t.title)}</span> <span class="meta">${t.status} · ${esc(t.id)}</span></div>`).join("")
       : '<div class="action"><span class="hint">queue empty</span></div>';

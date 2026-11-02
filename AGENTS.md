@@ -98,6 +98,7 @@ The agent layer (the dashboard's Agent/Body/Voice cards read the same data):
 
 ```bash
 curl -fsS http://localhost:3000/api/agent | python -m json.tool | head -50
+docker compose -f docker-compose.base44.yml exec zyphus python src/main.py agent consolidate --dry-run
 docker compose -f docker-compose.base44.yml exec zyphus python src/main.py agent run 'vitals'
 docker compose -f docker-compose.base44.yml exec zyphus python src/main.py agent run 'say: hello'
 docker compose -f docker-compose.base44.yml exec zyphus \
@@ -175,8 +176,18 @@ engine from scratch.
   history and saves the state. `snapshot()` feeds `/api/agent` (`field`) and `agent field`.
   The write-before-read guard is deliberate: a `write_file` candidate is scored from its kind alone
   (0.45 / 3.0) because a diff that does not exist yet cannot give a real blast radius.
-- `loop.py` - one tick = claim a task, plan it, run the tools, record everything; an idle tick proposes
-  self-directed work, a finished task can queue its own follow-up (`brain.follow_up`, e.g. inspect then
+- `consolidate.py` - the offline phase: experience becoming structure. A pass replays the action log's
+  unreplayed window (`window`, default 60 calls), accumulates per-tool competence in SQLite
+  (`devmind/agent/consolidation.db`, `ZYPHUS_CONSOLIDATION_PATH` overrides), and promotes what it
+  measured: a tool with >= 3 runs and >= 80% success becomes a world-model strategy
+  (`klass="tool"`), one under 50% is recorded as failing, so `world.strategies`/`prefer_strategy`
+  rest on measurement instead of optimism. A pass records a watermark of the last action it replayed,
+  so the next one only consolidates new ground, and `dry_run` computes the same plan writing nothing.
+  It runs on its own from an idle tick once `ZYPHUS_AGENT_CONSOLIDATE_AFTER` (default 20) calls have
+  piled up, from the `consolidate` tool, or with `agent consolidate [--window N] [--dry-run]`.
+  The dashboard's Consolidation card reads the same `latest()`.
+- `loop.py` - one tick = claim a task, plan it, run the tools, record everything; an idle tick
+  consolidates what has accumulated and proposes self-directed work, a finished task can queue its own follow-up (`brain.follow_up`, e.g. inspect then
   reflect), and the wait between ticks shortens when tasks are waiting. `run_specific`/`submit` run one
   named task now - that is what the control box uses. `get_loop()` is a process-wide singleton so the
   dashboard and CLI share it.
@@ -212,7 +223,7 @@ engine from scratch.
   `info` (state, threads, RSS, cmdline, cwd, exe, age), `monitor` (CPU% over a sampled interval) and
   `kill` (any signal, reporting whether the process is still alive). This is the same code the
   System PORT's `process_management` operation now uses instead of its old stub.
-- `cli.py` - `python src/main.py agent status|tools|tasks|run|tick|forever|field`. `agent field` prints
+- `cli.py` - `python src/main.py agent status|tools|tasks|run|tick|forever|field|consolidate`. `agent field` prints
   the activations, the perceived signals and the metacognitive calibration - the quickest way to see why
   the brain did what it did.
 
@@ -232,7 +243,8 @@ contains colons), so both `tool process {"action":"list"}` and `tool: process {.
 Running it: the loop autostarts inside the dashboard process when `ZYPHUS_AGENT_AUTOSTART=1` (set in
 compose). State is in SQLite, so a restart loses nothing - a task claimed when the process died is
 reclaimed after its lease. Pacing knobs: `ZYPHUS_AGENT_INTERVAL` (default 15s) and
-`ZYPHUS_AGENT_SELF_INTERVAL` (default 300s, how often it invents its own work).
+`ZYPHUS_AGENT_SELF_INTERVAL` (default 300s, how often it invents its own work) and
+`ZYPHUS_AGENT_CONSOLIDATE_AFTER` (default 20, unconsolidated tool calls that make a pass due).
 
 Two deliberate properties, don't "fix" them by accident:
 
@@ -254,7 +266,12 @@ continued on its own.
 docker compose -f docker-compose.base44.yml exec zyphus python -m pytest tests/ -v
 ```
 
-206 tests cover the suites below:
+215 tests cover the suites below:
+- `tests/test_consolidate.py` - an empty store records a pass that says so, replay measures outcome
+  and latency, a second pass only replays new actions while competence accumulates, a reliable tool is
+  promoted into the world model and a failing one is recorded as failing (and neither on one run),
+  `dry_run` writes nothing, reading `latest()` never creates the database, and `should_run` follows
+  the unconsolidated ground
 - `tests/test_field.py` - the field and the brain on it: which signal combination settles into which
   mode, negative coupling, satiation, relaxation after a long gap, hysteresis, gain loss on
   overconfidence, persistence across a restart (and a corrupt state file being ignored), mode-to-work

@@ -62,6 +62,27 @@ def field_cmd():
                    f"{stats['confidence']:.2f} gain {stats['gain']:.2f} error {stats['mean_error']:.2f}")
 
 
+@agent.command("consolidate")
+@click.option("--window", default=60, type=int, help="Recent tool calls to replay.")
+@click.option("--dry-run", is_flag=True, help="Compute the pass without writing anything.")
+def consolidate_cmd(window, dry_run):
+    """Replay measured experience and promote what it measured into structure."""
+    phase = get_loop().consolidation()
+    report = phase.run(window=window, dry_run=dry_run)
+    click.echo(click.style("--- Consolidation " + ("(dry run) ---" if dry_run else "---"), fg="cyan"))
+    click.echo(f"replayed:   {report['replayed']} tool call(s), window {report['window']}")
+    click.echo(f"promoted:   {', '.join(report['promoted']) or 'none'}")
+    click.echo(f"weak:       {', '.join(report['weak']) or 'none'}")
+    for record in report["tools"]:
+        click.echo(f"  {record['tool']:<14} {record['successes']}/{record['attempts']} ok"
+                   f"  rate {record['success_rate']:.2f}  {record['mean_ms']:.0f}ms")
+    if dry_run:
+        click.echo(click.style("nothing written", fg="yellow"))
+    else:
+        click.echo(f"pass {phase.passes()} recorded in {phase.path} "
+                   f"({report['duration_ms']}ms)")
+
+
 @agent.command("tools")
 def tools_cmd():
     """List the tools the agent can call."""

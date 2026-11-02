@@ -16,7 +16,7 @@ The last structure built in this process is kept here, so `execute` and
 import json
 from typing import Any, Dict, List, Optional
 
-from src.agent import benchmark, counterfactual, phases, resources, substrate
+from src.agent import benchmark, consolidate, counterfactual, phases, resources, substrate
 from src.agent.tools import ToolResult, _payload_result
 from src.agent.worldmodel import WorldModel
 
@@ -118,6 +118,14 @@ def phase_tool(action: str = "status", budget: float = 24.0, spend: float = 0.0,
     return _payload_result({"transition": record, "state": controller.state(),
                             "regimes": list(phases.REGIMES),
                             "thresholds": phases.THRESHOLDS})
+
+
+def consolidate_tool(action: str = "run", window: int = 60, dry_run: bool = False) -> ToolResult:
+    """The offline consolidation phase: replay measured experience, keep the competence."""
+    if (action or "run").lower() in ("stats", "status", "latest"):
+        return _payload_result(consolidate.Consolidation().latest())
+    report = consolidate.Consolidation().run(window=int(window or 60), dry_run=bool(dry_run))
+    return _payload_result(report)
 
 
 def world_tool(action: str = "stats", concepts: str = "", outcome: str = "", klass: str = "",

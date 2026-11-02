@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_INTERVAL = float(os.environ.get("ZYPHUS_AGENT_INTERVAL", "15"))
 DEFAULT_SELF_INTERVAL = float(os.environ.get("ZYPHUS_AGENT_SELF_INTERVAL", "300"))
 FOLLOW_UP_DELAY = float(os.environ.get("ZYPHUS_AGENT_CHAIN_DELAY", "20"))
+CONSOLIDATE_AFTER = int(os.environ.get("ZYPHUS_AGENT_CONSOLIDATE_AFTER", "20"))
 VITALS_TTL = 10.0
 
 
@@ -50,6 +51,7 @@ class AgentLoop:
         self._stop = threading.Event()
         self._vitals: Dict[str, Any] = {}
         self._vitals_at = 0.0
+        self._consolidation: Optional[Any] = None
 
     # --- one unit of work ----------------------------------------------------
 
@@ -166,9 +168,10 @@ class AgentLoop:
         logger.info("chained follow-up after %s: %s", task["id"], follow_up["title"])
 
     def _idle_tick(self) -> Dict[str, Any]:
-        """No task waiting: invent one, paced by self_interval."""
+        """No task waiting: consolidate what happened, then invent work."""
+        passed = self._consolidate_if_due()
         if time.time() - self._last_self_at < self.self_interval:
-            return {"action": "idle"}
+            return passed or {"action": "idle"}
         proposal = None
         try:
             proposal = self.brain.propose(self._context())
@@ -180,6 +183,33 @@ class AgentLoop:
                                      origin="self", priority=8)
         self._last_self_at = time.time()
         return {"action": "proposed", "task_id": task_id, "title": proposal["title"]}
+
+    def consolidation(self):
+        """The consolidation pass, sharing this loop's store."""
+        if self._consolidation is None:
+            from src.agent import consolidate
+
+            self._consolidation = consolidate.Consolidation(store=self.store)
+        return self._consolidation
+
+    def _consolidate_if_due(self) -> Optional[Dict[str, Any]]:
+        """Sleep phase: enough unconsolidated work has piled up, so replay it.
+
+        Runs only when the queue is idle, so consolidation never competes with
+        work waiting on the agent, and a failure here never breaks the tick.
+        """
+        try:
+            phase = self.consolidation()
+            if not phase.should_run(CONSOLIDATE_AFTER):
+                return None
+            report = phase.run()
+        except Exception as exc:
+            logger.warning("consolidation failed: %s", exc)
+            return None
+        logger.info("consolidated %d tool call(s): %d promoted, %d weak",
+                    report["replayed"], len(report["promoted"]), len(report["weak"]))
+        return {"action": "consolidated", "replayed": report["replayed"],
+                "promoted": report["promoted"], "weak": report["weak"]}
 
     def _context(self) -> Dict[str, Any]:
         """What the brain is allowed to know about its own state when proposing."""
@@ -264,6 +294,10 @@ class AgentLoop:
             field_state = snapshot() if callable(snapshot) else None
         except Exception as exc:
             field_state = {"error": f"{type(exc).__name__}: {exc}"}
+        try:
+            consolidation = self.consolidation().latest()
+        except Exception as exc:  # a bad consolidation file must not blank the dashboard
+            consolidation = {"error": f"{type(exc).__name__}: {exc}"}
         return {
             "running": self.running,
             "brain": self.brain.name,
@@ -276,6 +310,7 @@ class AgentLoop:
             "queue_path": self.store.path,
             "tools": self.registry.catalog(),
             "field": field_state,
+            "consolidation": consolidation,
             "vitals": self.body(),
             "voice": {
                 "latest": utterances[0] if utterances else None,

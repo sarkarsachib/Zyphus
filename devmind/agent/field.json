@@ -1,56 +1,56 @@
 {
   "activation": {
-    "deliberate": 0.609975,
-    "explore": 0.441001,
+    "deliberate": 0.78973,
+    "explore": 0.615771,
     "inhibit": 1e-06,
-    "plan": 0.930562
+    "plan": 0.999999
   },
   "metacognition": {
     "abs_error": {
       "deliberate": 0.0,
       "explore": 0.0,
       "inhibit": 0.0,
-      "plan": 1.7689999999999997
+      "plan": 2.6224
     },
     "attempts": {
       "deliberate": 0,
       "explore": 0,
       "inhibit": 0,
-      "plan": 8
+      "plan": 13
     },
     "gain": {
       "deliberate": 1.0,
       "explore": 1.0,
       "inhibit": 1.0,
-      "plan": 1.4422
+      "plan": 1.6
     },
     "successes": {
       "deliberate": 0,
       "explore": 0,
       "inhibit": 0,
-      "plan": 8
+      "plan": 13
     },
-    "surprise": 0.1387
+    "surprise": 0.1779
   },
   "mode": "plan",
   "previous_mode": "explore",
   "satiation": {
     "deliberate": 0.0,
-    "explore": 0.5375000000000013,
+    "explore": 0.0,
     "inhibit": 0.0,
     "plan": 0.9
   },
   "signals": {
     "backlog": 0.0,
-    "competence": 0.9222,
-    "fatigue": 0.675,
-    "novelty": 0.8571,
+    "competence": 0.65,
+    "fatigue": 0.0,
+    "novelty": 0.75,
     "stagnation": 0.0,
-    "surprise": 0.1571,
+    "surprise": 0.1746,
     "task": 1.0,
     "uncertainty": 1.0
   },
-  "steps": 15,
+  "steps": 23,
   "transitions": [
     {
       "activations": {
@@ -249,7 +249,73 @@
       "at": "2026-11-02T08:18:03",
       "from": "explore",
       "to": "plan"
+    },
+    {
+      "activations": {
+        "deliberate": 0.396,
+        "explore": 0.5934,
+        "inhibit": 0.3059,
+        "plan": 0.3166
+      },
+      "at": "2026-11-02T08:23:03",
+      "from": "plan",
+      "to": "explore"
+    },
+    {
+      "activations": {
+        "deliberate": 0.4998,
+        "explore": 0.4824,
+        "inhibit": 0.1973,
+        "plan": 0.6597
+      },
+      "at": "2026-11-02T08:23:11",
+      "from": "explore",
+      "to": "plan"
+    },
+    {
+      "activations": {
+        "deliberate": 0.4513,
+        "explore": 0.546,
+        "inhibit": 0.2897,
+        "plan": 0.3397
+      },
+      "at": "2026-11-02T08:27:04",
+      "from": "plan",
+      "to": "explore"
+    },
+    {
+      "activations": {
+        "deliberate": 0.6525,
+        "explore": 0.5694,
+        "inhibit": 0.1782,
+        "plan": 0.6731
+      },
+      "at": "2026-11-02T08:27:12",
+      "from": "explore",
+      "to": "plan"
+    },
+    {
+      "activations": {
+        "deliberate": 0.469,
+        "explore": 0.6304,
+        "inhibit": 0.2674,
+        "plan": 0.3403
+      },
+      "at": "2026-11-02T08:28:34",
+      "from": "plan",
+      "to": "explore"
+    },
+    {
+      "activations": {
+        "deliberate": 0.7233,
+        "explore": 0.6151,
+        "inhibit": 0.0977,
+        "plan": 0.8093
+      },
+      "at": "2026-11-02T08:28:42",
+      "from": "explore",
+      "to": "plan"
     }
   ],
-  "updated_at": "2026-11-02T08:18:03"
+  "updated_at": "2026-11-02T08:28:42"
 }

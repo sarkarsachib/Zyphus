@@ -801,6 +801,14 @@ def build_registry() -> ToolRegistry:
          "contradictions": "int how many observations conflict (optional)",
          "progress": "str comma-separated progress series (optional)"}, cognition.phase_tool))
     registry.register(Tool(
+        "consolidate", "Consolidation phase: replay the window of real tool calls, accumulate measured "
+                       "competence per tool, and promote what is reliable into the world model as a "
+                       "strategy (or record what keeps failing).",
+        {"action": "str: run|status (optional, default run)",
+         "window": "int recent tool calls to replay (optional, default 60)",
+         "dry_run": "bool compute the pass without writing anything (optional)"},
+        cognition.consolidate_tool))
+    registry.register(Tool(
         "world", "Memory as a generative world: record outcomes, read the relations they build, "
                  "generate hypotheses from learned tendencies (unverified until confirmed), and "
                  "see the procedures that have measured success.",
