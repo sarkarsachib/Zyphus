@@ -7,6 +7,18 @@
 - `web/server.py` is a small, dependency-free dashboard (stdlib `http.server`) that **drives that CLI**
   in a subprocess so the engine is usable from the browser preview on port 3000. It holds no engine
   logic — put features in the CLI, not in the dashboard.
+- The dashboard's front end is `web/index.html` plus `web/static/{app.css,app.js,face.js,mist.js}`,
+  served through `/static/<name>` (whitelisted filenames, no directory walk). `face.js` sculpts the ASCII
+  skull as a scalar field sampled onto a monospace grid — tapered cranium, angry brows, hollow sockets,
+  a jagged line of teeth — and draws the eyes/teeth/throat again in hot ink; `mist.js` is the ash and
+  ember field; `app.js` holds every fetch, the caption and the drawers.
+- Speaking is driven by what the agent actually produced: `app.js` polls `/api/agent` every 5 s and, when
+  `voice.latest` names a wav it has not seen, plays `/api/agent/voice/<file>` and animates the mouth
+  (measured with an AnalyserNode once the browser allows audio, a synthetic envelope until the first
+  gesture). The caption shows the words from the `speak` call logged nearest the wav's own filename
+  timestamp — never the previous utterance, and `…` when nothing matched. The command box and the
+  "voice him" button submit `say: <text>` / `self:voice` through the same token-gated
+  `POST /api/agent/task`; the key is kept in this browser's localStorage and sent as `X-Zyphus-Token`.
 - `nishkraman/awaken.py` is a standalone "awakening" script that is not part of the CLI.
 
 ## Run it

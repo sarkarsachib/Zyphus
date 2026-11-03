@@ -510,17 +510,17 @@
       "satiation": 0.9
     }
   ],
-  "clock": 2831.25,
-  "generation": 53,
+  "clock": 3196.75,
+  "generation": 59,
   "metacognition": {
     "abs_error": {
       "convergent": 0.0,
-      "diffuse": 2.5698000000000003,
+      "diffuse": 3.1974,
       "structural": 0.0
     },
     "attempts": {
       "convergent": 0,
-      "diffuse": 16,
+      "diffuse": 20,
       "structural": 0
     },
     "gain": {
@@ -530,10 +530,10 @@
     },
     "successes": {
       "convergent": 0,
-      "diffuse": 16,
+      "diffuse": 20,
       "structural": 0
     },
-    "surprise": 0.1444
+    "surprise": 0.1556
   },
   "morph_log": [
     {
@@ -646,15 +646,15 @@
   "regime": "diffuse",
   "signals": {
     "backlog": 0.0,
-    "competence": 0.7667,
-    "fatigue": 0.525,
+    "competence": 0.65,
+    "fatigue": 0.0,
     "novelty": 0.5,
     "stagnation": 0.0,
-    "surprise": 0.1332,
+    "surprise": 0.1546,
     "task": 1.0,
     "uncertainty": 1.0
   },
-  "steps": 1635,
+  "steps": 1834,
   "transitions": [
     {
       "activations": {
@@ -689,5 +689,5 @@
       "to": "diffuse"
     }
   ],
-  "updated_at": "2026-11-03T18:19:28"
+  "updated_at": "2026-11-03T18:30:41"
 }

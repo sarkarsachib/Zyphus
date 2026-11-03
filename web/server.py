@@ -32,6 +32,14 @@ except Exception as _exc:  # the dashboard must still serve if the agent layer b
 MODULES_ROOT = os.path.join(REPO_ROOT, "src", "modules")
 VOICE_DIR = os.path.join(REPO_ROOT, "devmind", "agent", "voice")
 VOICE_FILE = re.compile(r"^voice-\d{8}-\d{6}\.wav$")
+STATIC_ROOT = os.path.join(WEB_ROOT, "static")
+STATIC_NAME = re.compile(r"^[A-Za-z0-9][\w.-]*$")
+STATIC_TYPES = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+}
 CLI = os.path.join(REPO_ROOT, "src", "main.py")
 
 PORT = int(os.environ.get("ZYPHUS_WEB_PORT", "3000"))
@@ -239,16 +247,30 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "ZyphusDashboard"
 
     def _send(self, status, body, content_type, cache=False):
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        if not cache:
-            self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        """Write one response; a client that hung up mid-answer is not an error."""
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            if not cache:
+                self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
 
     def _send_json(self, status, payload):
         self._send(status, json.dumps(payload).encode("utf-8"), "application/json")
+
+    def _send_static(self, name):
+        """Serve the dashboard's own assets (css/js) from web/static."""
+        full = os.path.join(STATIC_ROOT, name)
+        kind = STATIC_TYPES.get(os.path.splitext(name)[1].lower())
+        if not STATIC_NAME.match(name) or kind is None or not os.path.isfile(full):
+            self._send_json(404, {"error": "Not found"})
+            return
+        with open(full, "rb") as handle:
+            self._send(200, handle.read(), kind)
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
@@ -260,6 +282,10 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             with open(os.path.join(WEB_ROOT, "index.html"), "rb") as handle:
                 self._send(200, handle.read(), "text/html; charset=utf-8")
+            return
+
+        if path.startswith("/static/"):
+            self._send_static(path.rsplit("/", 1)[-1])
             return
 
         try:
