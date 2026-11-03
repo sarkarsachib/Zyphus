@@ -677,8 +677,9 @@ def build_registry() -> ToolRegistry:
     registry.register(Tool(
         "speak", "Say text out loud - renders a wav with the speech engine in the image; "
                  "the dashboard plays the newest one.",
-        {"text": "str", "speed": "int words per minute (optional, default 165)",
-         "voice": "str voice name (optional)"}, senses.speak))
+        {"text": "str", "speed": "int words per minute (optional, default 118)",
+         "voice": "str voice name (optional)",
+         "pitch": "int 0-99 (optional, default 16 - low)"}, senses.speak))
     registry.register(Tool(
         "look", "See an image (a path in the container or an http(s) URL): format, size, "
                 "brightness, dominant colours and a luminance grid.",

@@ -15,6 +15,7 @@
 
 html, body {
   height: 100%;
+  height: 100dvh;
   margin: 0;
   background: var(--void);
   color: var(--bone);
@@ -24,7 +25,7 @@ html, body {
 
 body {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   position: relative;
 }
 
@@ -49,91 +50,23 @@ body {
   mix-blend-mode: normal;
 }
 
-/* ── top bar ────────────────────────────────────────────────────────── */
-.topbar {
-  position: relative;
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 14px 30px 12px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(to bottom, rgba(5, 5, 6, 0.92), rgba(5, 5, 6, 0.35));
-}
-
-.brand { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
-
-.sigil {
-  font-family: var(--serif);
-  font-size: 22px;
-  line-height: 1;
-  color: var(--blood-hot);
-  text-shadow: 0 0 14px rgba(255, 47, 54, 0.65);
-}
-
-.wordmark {
-  font-family: var(--serif);
-  font-size: 15px;
-  letter-spacing: 0.62em;
-  text-transform: uppercase;
-  color: var(--bone);
-}
-
-.epithet {
-  font-size: 10px;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: var(--ash);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.telemetry {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ash);
-  white-space: nowrap;
-}
-
-.telemetry .t { display: inline-flex; align-items: center; gap: 7px; }
-.telemetry b { color: var(--bone-dim); font-weight: 500; letter-spacing: 0.12em; }
-
-.dot {
-  width: 5px;
-  height: 5px;
-  background: var(--ash);
-  box-shadow: 0 0 0 rgba(255, 47, 54, 0);
-}
-
-.dot.live {
-  background: var(--blood-hot);
-  animation: ember 2.4s ease-in-out infinite;
-}
-
-@keyframes ember {
-  0%, 100% { box-shadow: 0 0 6px rgba(255, 47, 54, 0.9); opacity: 1; }
-  50% { box-shadow: 0 0 2px rgba(255, 47, 54, 0.35); opacity: 0.55; }
-}
-
 /* ── stage ──────────────────────────────────────────────────────────── */
 .stage {
   position: relative;
   z-index: 2;
   min-height: 0;
+  overflow: hidden;
   display: grid;
-  grid-template-rows: 1fr auto;
+  /* minmax(0, …) so the canvas can never push the row past the viewport: a
+     canvas reports its own bitmap as min-content height until it is clipped. */
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 
 #face {
   grid-row: 1;
   width: 100%;
   height: 100%;
+  min-height: 0;
   display: block;
 }
 
@@ -143,9 +76,11 @@ body {
   align-items: flex-start;
   justify-content: center;
   gap: 14px;
-  padding: 0 8vw 22px;
-  min-height: 62px;
+  padding: 0 clamp(16px, 6vw, 8vw) clamp(14px, 2.4vh, 22px);
+  min-height: 54px;
 }
+
+.utterance p { overflow-wrap: anywhere; }
 
 .utterance .mark {
   color: var(--blood);
@@ -174,7 +109,7 @@ body {
   z-index: 5;
   border-top: 1px solid var(--line);
   background: linear-gradient(to top, rgba(8, 5, 7, 0.97), rgba(6, 5, 7, 0.7));
-  padding: 14px 30px 16px;
+  padding: 14px 30px max(16px, env(safe-area-inset-bottom));
 }
 
 #say {
@@ -373,18 +308,36 @@ input.text {
 .note { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ash); margin-top: 10px; line-height: 1.8; }
 .note em { color: var(--blood); font-style: normal; }
 
+/* ── long strings never widen the page ──────────────────────────────── */
+.card .body, .card .meta, .row span, .log, .note { overflow-wrap: anywhere; }
+.row span:not(.key), .card .name { min-width: 0; }
+
 /* ── narrow ─────────────────────────────────────────────────────────── */
 @media (max-width: 760px) {
-  .topbar { padding: 12px 16px; flex-wrap: wrap; gap: 10px; }
-  .epithet { display: none; }
-  .telemetry { gap: 12px; font-size: 9px; }
-  .telemetry .t:nth-child(3), .telemetry .t:nth-child(5) { display: none; }
-  .console { padding: 12px 16px 14px; }
-  #say { flex-wrap: wrap; }
-  #say-input { flex: 1 1 100%; order: 2; padding: 10px 4px; }
-  .btn { padding: 11px 14px; }
-  .drawer { left: 12px; right: 12px; padding: 14px; }
-  .utterance { padding: 0 20px 16px; }
-  .hint { display: none; }
+  .console { padding: 10px 14px max(12px, env(safe-area-inset-bottom)); }
+  .drawer { left: 10px; right: 10px; padding: 14px; max-height: 58vh; }
+  .utterance { gap: 10px; }
+  .utterance p { font-size: 14px; line-height: 1.5; }
   .grid { grid-template-columns: 1fr; }
+  .statusline { flex-direction: column; align-items: stretch; gap: 8px; }
+  .tabs { justify-content: space-between; }
+  .tab { padding: 6px 4px; letter-spacing: 0.14em; }
+  .hint { max-width: none; text-align: left; white-space: normal; font-size: 9px; }
+}
+
+/* Phones: the field goes first, the buttons share a row under it. */
+@media (max-width: 620px) {
+  #say { flex-wrap: wrap; gap: 8px; padding: 6px; }
+  .prompt { display: none; }
+  #say-input { flex: 1 1 100%; order: 1; padding: 12px 8px; font-size: 16px; letter-spacing: 0.08em; }
+  .btn { order: 2; flex: 1 1 0; padding: 12px 8px; letter-spacing: 0.16em; }
+  .drawer { left: 8px; right: 8px; max-height: 54vh; }
+  .row { grid-template-columns: 78px 1fr; gap: 8px; }
+  .bar { grid-template-columns: 74px 1fr 38px; }
+}
+
+@media (max-height: 560px) {
+  .utterance { min-height: 0; padding-bottom: 8px; }
+  .utterance p { font-size: 13px; }
+  .drawer { max-height: 70vh; }
 }

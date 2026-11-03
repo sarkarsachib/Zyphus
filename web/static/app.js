@@ -11,8 +11,13 @@
   const audio = $("voice-audio");
   const input = $("say-input");
 
+  // The control key is hardcoded for now so the console works without pasting
+  // it first. The server only honours it while the preview flag is on; a real
+  // token stored in this browser still takes precedence.
+  const HARDCODED_KEY = "zyphus";
+
   const state = {
-    token: localStorage.getItem("zyphus.token") || "",
+    token: localStorage.getItem("zyphus.token") || HARDCODED_KEY,
     agent: null,
     substrate: null,
     capabilities: null,
@@ -25,12 +30,6 @@
     speakingUntil: 0,
     lastResult: "",
     busy: false,
-  };
-
-  const EPITHET = {
-    diffuse: "diffuse · reading the field",
-    structural: "structural · composing a plan",
-    convergent: "convergent · committing to act",
   };
 
   /* ── pointer ───────────────────────────────────────────────────────── */
@@ -182,21 +181,16 @@
     node.classList.toggle("bad", Boolean(bad));
   }
 
+  /** The eyes carry the state now: regime is colour, presence is glow. */
   function renderTelemetry(agent) {
-    const running = Boolean(agent.running);
-    $("dot-loop").classList.toggle("live", running);
-    $("t-state").textContent = running ? "awake" : "dormant";
-    $("t-ticks").textContent = String(agent.ticks ?? "—");
-    const regime = (agent.field || {}).regime || "—";
-    $("t-regime").textContent = regime;
+    const regime = (agent.field || {}).regime || "diffuse";
     face.setRegime(regime);
-    $("epithet").textContent = EPITHET[regime] || "adaptive cognitive substrate";
+    face.setPresent(Boolean(agent.running));
     const q = agent.queue || {};
-    $("t-queue").textContent = String((q.pending || 0) + (q.running || 0));
-    const pulse = (agent.vitals || {}).pulse || {};
-    $("t-rhythm").textContent = pulse.available === false
-      ? "—"
-      : `${pulse.rhythm || "—"} ${pulse.rate_hz ?? ""}hz`;
+    const queued = (q.pending || 0) + (q.running || 0);
+    return (agent.running ? "awake" : "dormant")
+      + " · " + regime
+      + (queued ? " · " + queued + " queued" : "");
   }
 
   async function pollAgent() {
@@ -207,14 +201,12 @@
         return;
       }
       state.agent = agent;
-      renderTelemetry(agent);
+      const presence = renderTelemetry(agent);
       onVoice(agent);
       if (state.panel) renderPanel();
       if (!state.busy) {
         const armed = (agent.control || {}).configured;
-        setHint(armed
-          ? (state.token ? "remote control armed" : "remote control armed · paste your key to transmit")
-          : "remote control off on the server", !armed);
+        setHint(armed ? presence : presence + " · control off", !armed);
       }
     } catch (err) {
       setHint("no signal from the engine — retrying", true);
@@ -436,42 +428,11 @@
       return;
     }
 
-    if (state.panel === "key") {
-      drawer.appendChild(el("h3", "", "control key"));
-      const box = el("div", "card");
-      const field = el("input", "text");
-      field.type = "password";
-      field.placeholder = "ZYPHUS_CONTROL_TOKEN";
-      field.value = state.token;
-      box.appendChild(field);
-      const save = el("button", "btn primary", "save key");
-      save.type = "button";
-      save.style.marginTop = "10px";
-      save.addEventListener("click", () => {
-        state.token = field.value.trim();
-        if (state.token) localStorage.setItem("zyphus.token", state.token);
-        else localStorage.removeItem("zyphus.token");
-        setHint(state.token ? "key held in this browser" : "key cleared");
-        closePanel();
-      });
-      box.appendChild(save);
-      drawer.appendChild(box);
-      drawer.appendChild(el("div", "note",
-        "Only POST /api/agent/task runs tools, and only for a caller holding the control token. "
-        + "The key stays in this browser (localStorage) and is sent as X-Zyphus-Token. "
-        + "Speaking and the queue are read-only without it."));
-      return;
-    }
   }
 
   /* ── driving him ───────────────────────────────────────────────────── */
   async function runTask(instruction) {
     if (state.busy) return;
-    if (!state.token) {
-      setHint("no key — open key and paste the control token", true);
-      openPanel("key");
-      return;
-    }
     state.busy = true;
     $("transmit").disabled = true;
     $("voice-btn").disabled = true;

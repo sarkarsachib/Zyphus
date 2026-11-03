@@ -8,17 +8,26 @@
   in a subprocess so the engine is usable from the browser preview on port 3000. It holds no engine
   logic — put features in the CLI, not in the dashboard.
 - The dashboard's front end is `web/index.html` plus `web/static/{app.css,app.js,face.js,mist.js}`,
-  served through `/static/<name>` (whitelisted filenames, no directory walk). `face.js` sculpts the ASCII
-  skull as a scalar field sampled onto a monospace grid — tapered cranium, angry brows, hollow sockets,
-  a jagged line of teeth — and draws the eyes/teeth/throat again in hot ink; `mist.js` is the ash and
-  ember field; `app.js` holds every fetch, the caption and the drawers.
+  served through `/static/<name>` (whitelisted filenames, no directory walk). `face.js` is **two eyes
+  and nothing else**: each socket is a tilted almond field (tight upper lid slanting down toward the
+  nose) sampled onto a monospace grid, hollow inside, burning at the rim with an iris ring and a slit
+  pupil that follows the pointer. It blinks, flares with his voice and tints by regime (crimson diffuse,
+  ember structural, pale convergent) — which is why the page has no header or telemetry bar: the eyes
+  carry the state, and the status line's hint spells it out (`awake · diffuse`). `mist.js` is the ash
+  and ember field; `app.js` holds every fetch, the caption and the drawers.
 - Speaking is driven by what the agent actually produced: `app.js` polls `/api/agent` every 5 s and, when
-  `voice.latest` names a wav it has not seen, plays `/api/agent/voice/<file>` and animates the mouth
+  `voice.latest` names a wav it has not seen, plays `/api/agent/voice/<file>` and flares the eyes
   (measured with an AnalyserNode once the browser allows audio, a synthetic envelope until the first
   gesture). The caption shows the words from the `speak` call logged nearest the wav's own filename
   timestamp — never the previous utterance, and `…` when nothing matched. The command box and the
   "voice him" button submit `say: <text>` / `self:voice` through the same token-gated
-  `POST /api/agent/task`; the key is kept in this browser's localStorage and sent as `X-Zyphus-Token`.
+  `POST /api/agent/task`; the key is sent as `X-Zyphus-Token`. It is **hardcoded for now**
+  (`HARDCODED_KEY` in `app.js`, mirrored by `control.PREVIEW_TOKEN`) so the console works without
+  pasting a secret first, and there is no longer a key panel. A token in this browser's localStorage
+  still wins. The hardcoded one is only honoured while `BASE44_PREVIEW_MODE == "1"`; with the flag
+  unset `control.authorized()` is back to the configured `ZYPHUS_CONTROL_TOKEN` alone.
+- The voice is deliberately deep and slow: `senses.speak()` defaults to 118 wpm and pitch 16
+  (`DEFAULT_SPEED` / `DEFAULT_PITCH`); the `speak` tool takes `speed` and `pitch` per call.
 - `nishkraman/awaken.py` is a standalone "awakening" script that is not part of the CLI.
 
 ## Run it
@@ -244,6 +253,10 @@ engine from scratch.
   `brain.evolve(elapsed)` before doing anything, and `_wait()` sleeps in `ZYPHUS_FIELD_SLICE` (default
   2s) slices, evolving the field each slice, so a quiet agent still settles, tires and restructures.
   `get_loop()` is a process-wide singleton so the dashboard and CLI share it.
+  **An idle queue is not silence:** `_taunt_if_due()` speaks one line from `src/agent/taunts.py` every
+  `ZYPHUS_AGENT_TAUNT_EVERY` seconds (default 75) through the real `speak` tool, and logs that call with
+  no task id - the same action log the dashboard reads its caption from. So a preview left alone is him
+  mocking the operator, wav and all. A failing speech engine just skips the taunt.
 - `embodiment.py` - the body. `vitals()` runs a real heartbeat burst from `src/heartbeat_engine.py` and
   builds a 207-dimension emotional state from `src/emotion_200d_system.py`, stabilised by
   `mood_stabilizer.py` + `cluster_modulation.py`. Both are driven by real things: container CPU/memory
@@ -253,7 +266,10 @@ engine from scratch.
   the newest one. `look()` decodes a PNG with the standard library and reports size, brightness, dominant
   colours and a luminance grid the agent can reason about - for JPEG it reads the frame size only and
   says so. There is no `listen()`: the container has no microphone.
-- `control.py` - the token gate for remote control (see "Deliberate properties" below).
+- `control.py` - the token gate for remote control (see "Deliberate properties" below). It accepts the
+  configured `ZYPHUS_CONTROL_TOKEN`, plus the hardcoded `PREVIEW_TOKEN` ("zyphus") **only** while
+  `BASE44_PREVIEW_MODE == "1"`; that preview key is a deliberate, temporary convenience, not a second
+  way to bypass the gate outside the sandbox.
 - `fusion.py` - the working model fusion engine (replaces the stub
   `llm_superfusing_engine_adapter.py` that faked cognitive traits with `random.uniform`).
   Scores model responses on real, deterministic signals (length, structure, keyword density,
@@ -320,7 +336,9 @@ continued on its own.
 docker compose -f docker-compose.base44.yml exec zyphus python -m pytest tests/ -v
 ```
 
-229 tests cover the suites below:
+232 tests cover the suites below:
+- `tests/test_taunts.py` - the idle taunt: lines rotate through the list, an idle tick speaks one and
+  logs it as a `speak` action (so the dashboard finds the words), and the interval is respected
 - `tests/test_substrate.py` - characterization, composition wired by products, execution holding real
   commands back until allowed, the last structure being visible before anything runs, restructuring
   operators, and the `substrate` tool's build/execute/restructure path

@@ -29,6 +29,8 @@ DEFAULT_INTERVAL = float(os.environ.get("ZYPHUS_AGENT_INTERVAL", "15"))
 DEFAULT_SELF_INTERVAL = float(os.environ.get("ZYPHUS_AGENT_SELF_INTERVAL", "300"))
 FOLLOW_UP_DELAY = float(os.environ.get("ZYPHUS_AGENT_CHAIN_DELAY", "20"))
 CONSOLIDATE_AFTER = int(os.environ.get("ZYPHUS_AGENT_CONSOLIDATE_AFTER", "20"))
+# An idle agent does not go quiet: this is how often he mocks the operator.
+TAUNT_EVERY = float(os.environ.get("ZYPHUS_AGENT_TAUNT_EVERY", "75"))
 VITALS_TTL = 10.0
 # The cognitive field keeps evolving between ticks; this is how long one slice of
 # idle time is before it is integrated, so a waiting loop is never a frozen loop.
@@ -50,6 +52,7 @@ class AgentLoop:
         self.ticks = 0
         self.last_tick_at: Optional[str] = None
         self._last_self_at = 0.0
+        self._last_taunt_at = time.time()
         self._thread: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._vitals: Dict[str, Any] = {}
@@ -195,21 +198,49 @@ class AgentLoop:
         logger.info("chained follow-up after %s: %s", task["id"], follow_up["title"])
 
     def _idle_tick(self) -> Dict[str, Any]:
-        """No task waiting: consolidate what happened, then invent work."""
+        """No task waiting: taunt the operator, consolidate, then invent work."""
+        taunted = self._taunt_if_due()
         passed = self._consolidate_if_due()
         if time.time() - self._last_self_at < self.self_interval:
-            return passed or {"action": "idle"}
+            return taunted or passed or {"action": "idle"}
         proposal = None
         try:
             proposal = self.brain.propose(self._context())
         except Exception as exc:
             logger.warning("proposal failed: %s", exc)
         if not proposal:
-            return {"action": "idle"}
+            return taunted or {"action": "idle"}
         task_id = self.store.enqueue(proposal["title"], proposal["instructions"],
                                      origin="self", priority=8)
         self._last_self_at = time.time()
         return {"action": "proposed", "task_id": task_id, "title": proposal["title"]}
+
+    def _taunt_if_due(self) -> Optional[Dict[str, Any]]:
+        """An empty queue is not silence: he says something to the operator.
+
+        The utterance goes through the real `speak` tool, so it lands in the
+        action log exactly like any other call - which is also how the dashboard
+        finds the words for the wav it plays.
+        """
+        if time.time() - self._last_taunt_at < TAUNT_EVERY:
+            return None
+        self._last_taunt_at = time.time()
+        try:
+            from src.agent.taunts import taunt
+
+            line = taunt()
+            started = time.time()
+            result = self.registry.run("speak", {"text": line})
+            duration_ms = int((time.time() - started) * 1000)
+            self.store.log_action(None, "speak", {"text": line}, result.ok,
+                                  result.output, result.error or "", duration_ms)
+        except Exception as exc:  # a taunt must never break a tick
+            logger.warning("taunt failed: %s", exc)
+            return None
+        if not result.ok:
+            return None
+        return {"action": "taunted", "text": line,
+                "file": (result.meta or {}).get("file")}
 
     def consolidation(self):
         """The consolidation pass, sharing this loop's store."""

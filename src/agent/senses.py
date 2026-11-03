@@ -37,8 +37,17 @@ def speech_engine() -> Optional[str]:
     return shutil.which("espeak-ng") or shutil.which("espeak")
 
 
-def speak(text: str, speed: int = 165, voice: Optional[str] = None) -> ToolResult:
-    """Say `text` out loud to a wav file; the dashboard plays the newest one."""
+DEFAULT_SPEED = 118
+DEFAULT_PITCH = 16
+
+
+def speak(text: str, speed: int = DEFAULT_SPEED, voice: Optional[str] = None,
+          pitch: int = DEFAULT_PITCH) -> ToolResult:
+    """Say `text` out loud to a wav file; the dashboard plays the newest one.
+
+    The defaults are deliberately low and slow: a deep, unhurried voice rather
+    than the engine's neutral reading pace.
+    """
     text = (text or "").strip()
     if not text:
         return ToolResult(False, error="nothing to say")
@@ -49,7 +58,7 @@ def speak(text: str, speed: int = 165, voice: Optional[str] = None) -> ToolResul
     os.makedirs(VOICE_DIR, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     path = os.path.join(VOICE_DIR, f"voice-{stamp}.wav")
-    command = [engine, "-w", path, "-s", str(int(speed))]
+    command = [engine, "-w", path, "-s", str(int(speed)), "-p", str(int(pitch))]
     if voice:
         command += ["-v", str(voice)]
     command.append(text)
