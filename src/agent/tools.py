@@ -778,7 +778,7 @@ def build_registry() -> ToolRegistry:
          "limit": "int (optional, default 25)", "sort": "str rss|cpu|pid|name (optional)",
          "interval": "float seconds for monitor (optional, default 0.2)"}, process))
 
-    from src.agent import cognition
+    from src.agent import capabilities as capability_layer, cognition
 
     registry.register(Tool(
         "substrate", "Cognitive morphogenesis: compose a temporary structure for a problem out of "
@@ -808,6 +808,19 @@ def build_registry() -> ToolRegistry:
          "window": "int recent tool calls to replay (optional, default 60)",
          "dry_run": "bool compute the pass without writing anything (optional)"},
         cognition.consolidate_tool))
+    registry.register(Tool(
+        "planner", "Compose tool calls for an instruction without running them. The deliberative "
+                   "planner is a capability the cognitive field recruits, not the brain itself.",
+        {"instructions": "str what to do",
+         "notes_dir": "str notes directory for composed note paths (optional)"},
+        capability_layer.planner_tool))
+    registry.register(Tool(
+        "field", "The brain's cognitive field: three regimes (diffuse, structural, convergent) "
+                 "over distributed cells and competing coalitions. Inspect it, evolve it without "
+                 "a task, or let it restructure its own thinking architecture (morph).",
+        {"action": "str: status|evolve|morph (optional, default status)",
+         "seconds": "float seconds to evolve (optional, default 1.5)"},
+        capability_layer.field_tool))
     registry.register(Tool(
         "world", "Memory as a generative world: record outcomes, read the relations they build, "
                  "generate hypotheses from learned tendencies (unverified until confirmed), and "

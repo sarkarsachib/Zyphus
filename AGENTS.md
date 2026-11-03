@@ -128,7 +128,9 @@ engine from scratch.
   `web_fetch`, plus the body and senses: `vitals`, `speak`, `look`, `js_module`, plus the new
   capabilities: `git_status`, `code_analyze` (AST), `memory` (SQLite key-value), `python_eval`,
   `system_info`, `fuse` (model fusion), and the integration layer: `rag` (retrieval index),
-  `model` (model endpoint config), `api` (custom API registry), `connector` (webhook/slack/github/http).
+  `model` (model endpoint config), `api` (custom API registry), `connector` (webhook/slack/github/http),
+  plus `planner` (compose calls without running them) and `field` (inspect, evolve or morph the brain's
+  own cognitive field).
   They run inside the container with **full access by design**: no allow-lists, no path restrictions,
   no dry run, any host and any method. Accountability comes from the action log instead.
   `code_analyze` reads the file from disk (not through `read_file`, whose output is capped at 20k
@@ -152,30 +154,67 @@ engine from scratch.
   into a short chain of tool calls, and proposes its own work when the queue is empty (`self:inspect`,
   `self:reflect`, `self:voice`, `self:selftest`, `self:inventory`, `self:improve`,
   `self:remember`, `self:explore`, `self:git`, `self:system`); it remembers what it has already read
-  so its curiosity moves instead of repeating. It is now the *composer* the field brain calls, not the
-  brain the loop gets: `build_brain()` returns `AdaptiveFieldBrain`. `ModelBrain` (`model_brain.py`) is
-  one candidate voice inside the field, not a replacement for it.
-- `field.py` - the adaptive cognitive field. Four attractors (`plan`, `explore`, `deliberate`,
-  `inhibit`) compete continuously: each is excited by named signals (task, backlog, novelty,
-  uncertainty, surprise, stagnation, competence, fatigue) through the `COUPLING` matrix, suppressed by
-  the others (`INHIBITION`) and by its own use (`SATIATION`), and integrated in real time (`TAU`,
-  `STEP_SECONDS`, `HORIZON_SECONDS`), so a long gap relaxes the field and a burst of surprise excites
-  deliberation. **The mode is whichever attractor is in equilibrium - nothing branches on task text and
-  nothing rotates.** A mode can only be displaced by `HYSTERESIS`, which stops flicker. `Metacognition`
-  states a confidence before a mode acts, scores it afterwards, and moves that mode's `gain`, so a mode
-  whose calls fail loses its pull on the field. State persists to `devmind/agent/field.json`
-  (`ZYPHUS_FIELD_PATH` overrides), which is runtime state like the notes - not configuration.
+  so its curiosity moves instead of repeating. It is no longer the brain the loop gets: it is the
+  `planner` capability (`capabilities.py`) that the structural/convergent coalition recruits, while
+  `build_brain()` returns `AdaptiveFieldBrain`. `ModelBrain` (`model_brain.py`) is one candidate voice
+  inside the field, not a replacement for it.
+- `field.py` - the emergent cognitive field. A population of distributed `Cell`s (nine seeds: `scan`,
+  `associate`, `wander`, `compose`, `frame`, `ground`, `commit`, `verify`, `inhibit`), each carrying one
+  capability, is activated by named signals (task, backlog, novelty, uncertainty, surprise, stagnation,
+  competence, fatigue) through the per-regime `REGIME_COUPLING` table plus each cell's own `affinity`.
+  Cells recruit and suppress each other over a learned topology; the active cells of a regime are its
+  **coalition**, and three regimes compete for the field: `diffuse`, `structural`, `convergent`. **The
+  regime is whichever coalition wins - nothing branches on task text and nothing rotates.** Coalitions
+  compete on how well their cells fit the signals (`_potentials`), the best-fitting one silences the
+  others (`LATERAL`), and the incumbent is only displaced by `HYSTERESIS`. A `TONE` keeps a spontaneous
+  drift in the field, so `evolve()`/`step()` keep changing it with no task at all. `SATIATION` costs a
+  tired cell part of its drive. `morph()` is early cognitive morphogenesis: a cell carrying too much
+  activation splits into a branch, an unused branch merges back, co-activated cells wire together and
+  unused links are pruned - the topology is part of the state, so the brain can restructure its own
+  thinking architecture and it survives a restart. `Metacognition` states a confidence before a regime
+  acts, scores it afterwards, and moves that regime's `gain`. State persists to `devmind/agent/field.json`
+  (`ZYPHUS_FIELD_PATH` overrides), which is runtime state like the notes - not configuration. An older
+  four-attractor file is ignored and the population starts fresh.
+- `capabilities.py` - what the field can recruit: `planner` (the old `DeliberativeBrain`, demoted to a
+  capability), `model`, `retrieval` and `probe` (read a file before a composed plan overwrites it). The
+  winning coalition fields the regime's primary capability (`probe` for diffuse, `planner` otherwise)
+  and recruits the others only when their cells are active. `planner_tool` is registered as the
+  `planner` tool, so a task can call it directly and get composed calls back without executing them;
+  `field_tool` is the `field` tool (`status|evolve|morph`), which is how the agent inspects, advances or
+  restructures its own thinking architecture from inside a task.
 - `field_brain.py` - the brain on that field, and what `build_brain()` returns (`name =
-  "adaptive-field"`). `plan()` perceives the task, settles the field, then acts through the settled
-  mode: `plan` composes and runs, `explore` reads a file before overwriting it, `deliberate` composes
-  alternatives (direct / retrieval-grounded / model) and keeps the one with the best predicted
-  success against predicted risk, `inhibit` runs the plan and queues a consolidation follow-up.
-  `propose()` picks idle work from the same equilibrium (explore -> read something unread, deliberate ->
-  hypotheses or a structure, plan -> AST analysis, inhibit -> reflection). `observe(task, result)` is
-  the loop's new hook: it scores the prediction, records per-tool success, appends to the field's
+  "adaptive-field"`). `plan()` perceives the task, settles the field, recruits the winning coalition's
+  capabilities and keeps the plan with the best predicted success against predicted risk: diffuse probes
+  and grounds, structural composes (planner / model / retrieval), convergent commits to the shortest
+  candidate. `propose()` picks idle work from the same coalition (diffuse -> read something unread,
+  structural -> a structure or hypotheses, convergent -> reflection when tired, otherwise AST analysis).
+  `evolve(seconds)` steps the same dynamics with no task, which is what keeps the field moving between
+  ticks. `observe(task, result)` scores the prediction, records per-tool success, appends to the field's
   history and saves the state. `snapshot()` feeds `/api/agent` (`field`) and `agent field`.
   The write-before-read guard is deliberate: a `write_file` candidate is scored from its kind alone
   (0.45 / 3.0) because a diff that does not exist yet cannot give a real blast radius.
+- `substrate.py` - the cognitive substrate, and the layer the field brain composes with. A problem is
+  characterized from its wording and the repo (`klass`, testability, budget), the products it needs are
+  derived from that, and a DAG of primitives (`scan_repo`, `retrieve`, `hypotheses`, `counterfactual`,
+  `compress`, …) is wired by what each one produces and consumes - per problem, not from a workflow list.
+  `execute()` runs analysis for real and holds execution back unless `allow_execution`; the last unit of
+  budget is reserved for `compress`, so a run always pays for learning something. `restructure()` rebuilds
+  the DAG when an observation contradicts it (`broaden`/`deepen`/`reroute`/`verify` are real operators, each
+  recorded with its reason). The last structure is remembered **as soon as it is composed**, so the
+  dashboard's Cognition card shows it before anything runs.
+- `cognition.py` - the substrate's tool surface (`build`, `execute`, `restructure`, `phase`, `world`,
+  `predict`, `resources`, `benchmark`, `stats`), registered as the `substrate` tool. It keeps the current
+  structure in-process so `execute`/`restructure` continue it without the caller passing it back.
+- `phases.py` - regime transitions driven by measurements, never a schedule: uncertainty, hypothesis
+  spread, progress and remaining budget move the substrate between `explore`, `converge`, `execute`,
+  `recover` and `compress`, and every transition carries the numbers that caused it.
+- `worldmodel.py` - memory as a generative world (`devmind/agent/world.db`): concept relations with
+  evidence counts, plus strategies that finished a task class. It *generates* testable hypotheses from the
+  strongest relations (all `verified: False` until a real observation confirms them) and lets a proven
+  strategy start a later structure already in `converge`.
+- `counterfactual.py` - compare possible worlds before entering one: a proposed patch's footprint is read
+  off the real import graph, a command contributes cost and risk, and `choose_experiment` picks the action
+  with the largest expected drop in hypothesis entropy per unit of cost. Nothing here executes.
 - `consolidate.py` - the offline phase: experience becoming structure. A pass replays the action log's
   unreplayed window (`window`, default 60 calls), accumulates per-tool competence in SQLite
   (`devmind/agent/consolidation.db`, `ZYPHUS_CONSOLIDATION_PATH` overrides), and promotes what it
@@ -189,8 +228,10 @@ engine from scratch.
 - `loop.py` - one tick = claim a task, plan it, run the tools, record everything; an idle tick
   consolidates what has accumulated and proposes self-directed work, a finished task can queue its own follow-up (`brain.follow_up`, e.g. inspect then
   reflect), and the wait between ticks shortens when tasks are waiting. `run_specific`/`submit` run one
-  named task now - that is what the control box uses. `get_loop()` is a process-wide singleton so the
-  dashboard and CLI share it.
+  named task now - that is what the control box uses. **The field never stops:** `tick()` calls
+  `brain.evolve(elapsed)` before doing anything, and `_wait()` sleeps in `ZYPHUS_FIELD_SLICE` (default
+  2s) slices, evolving the field each slice, so a quiet agent still settles, tires and restructures.
+  `get_loop()` is a process-wide singleton so the dashboard and CLI share it.
 - `embodiment.py` - the body. `vitals()` runs a real heartbeat burst from `src/heartbeat_engine.py` and
   builds a 207-dimension emotional state from `src/emotion_200d_system.py`, stabilised by
   `mood_stabilizer.py` + `cluster_modulation.py`. Both are driven by real things: container CPU/memory
@@ -223,9 +264,10 @@ engine from scratch.
   `info` (state, threads, RSS, cmdline, cwd, exe, age), `monitor` (CPU% over a sampled interval) and
   `kill` (any signal, reporting whether the process is still alive). This is the same code the
   System PORT's `process_management` operation now uses instead of its old stub.
-- `cli.py` - `python src/main.py agent status|tools|tasks|run|tick|forever|field|consolidate`. `agent field` prints
-  the activations, the perceived signals and the metacognitive calibration - the quickest way to see why
-  the brain did what it did.
+- `cli.py` - `python src/main.py agent status|tools|tasks|run|tick|forever|field|morph|consolidate`.
+  `agent field` prints the winning regime, the competing coalitions and their member cells, the perceived
+  signals, the metacognitive calibration and the last morphogenesis events - the quickest way to see why
+  the brain did what it did. `agent morph` restructures the field now and reports split/merge events.
 
 Task instruction prefixes: `shell:<command>`, `fetch:<url>`, `look:<image path or URL>`, `say:<text>`,
 `git:`, `analyze:<path>`, `memory: store|recall|list|forget`, `eval:<expression>`, `system:`,
@@ -266,17 +308,29 @@ continued on its own.
 docker compose -f docker-compose.base44.yml exec zyphus python -m pytest tests/ -v
 ```
 
-215 tests cover the suites below:
+229 tests cover the suites below:
+- `tests/test_substrate.py` - characterization, composition wired by products, execution holding real
+  commands back until allowed, the last structure being visible before anything runs, restructuring
+  operators, and the `substrate` tool's build/execute/restructure path
+- `tests/test_phases.py` - each regime transition fires on its own measurement and carries it
+- `tests/test_worldmodel.py` - relations gain evidence, hypotheses are generated unverified and confirmed
+  by a real observation, strategies rank by measured success
+- `tests/test_counterfactual.py` - patch footprint from the real import graph, command risk, and
+  `choose_experiment` preferring the cheapest action that separates the candidates
+- `tests/test_benchmark.py` - the four research goals measured on a real root, not narrated
 - `tests/test_consolidate.py` - an empty store records a pass that says so, replay measures outcome
   and latency, a second pass only replays new actions while competence accumulates, a reliable tool is
   promoted into the world model and a failing one is recorded as failing (and neither on one run),
   `dry_run` writes nothing, reading `latest()` never creates the database, and `should_run` follows
   the unconsolidated ground
 - `tests/test_field.py` - the field and the brain on it: which signal combination settles into which
-  mode, negative coupling, satiation, relaxation after a long gap, hysteresis, gain loss on
-  overconfidence, persistence across a restart (and a corrupt state file being ignored), mode-to-work
-  mapping, alternatives chosen by predicted risk, read-before-write, and `observe` scoring a real
-  outcome. It monkeypatches `substrate.last` so a global from another suite cannot decide the mode.
+  regime, distributed cells and ranked competing coalitions, negative coupling, satiation, relaxation
+  after a long gap, hysteresis, continuous evolution with no task (transitions appear), morphogenesis
+  (split, merge, survival across a restart), gain loss on overconfidence, persistence (and a corrupt or
+  older state file being ignored), regime-to-work mapping, the planner as a capability, alternatives
+  chosen by predicted risk, read-before-write, `observe` scoring a real outcome, and the loop evolving
+  the field on ticks and between them. It monkeypatches `substrate.last` so a global from another suite
+  cannot decide the regime.
 - `tests/test_hybrid_memory.py` - deterministic embedding, store/search ranking, namespace filters,
   idempotent re-index, delete/get/stats, persistence across instances
 - `tests/test_fusion_port.py` - real Python/JavaScript validation (and unavailable-toolchain honesty),

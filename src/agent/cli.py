@@ -38,7 +38,7 @@ def status_cmd():
 
 @agent.command("field")
 def field_cmd():
-    """Show the cognitive field: what is activated, what won, how wrong it has been."""
+    """Show the cognitive field: regimes, coalitions, cells and self-model."""
     from src.agent.field import summarize
 
     brain = get_loop().brain
@@ -47,19 +47,54 @@ def field_cmd():
         click.echo(f"brain {brain.name} keeps no field")
         return
     click.echo(click.style("--- Cognitive field ---", fg="cyan"))
-    click.echo(f"mode:      {snapshot['mode']}"
-               + (f" (from {snapshot['previous_mode']})" if snapshot.get("previous_mode") else ""))
-    click.echo(f"dominance: {snapshot['dominance']:.2f}")
+    click.echo(f"regime:      {snapshot['regime']}"
+               + (f" (from {snapshot['previous_regime']})"
+                  if snapshot.get("previous_regime") else ""))
+    click.echo(f"dominance:   {snapshot['dominance']:.2f}")
+    click.echo(f"cells:       {snapshot['cell_count']}  generation "
+               f"{snapshot['morphogenesis']['generation']}  steps {snapshot['steps']}")
     for line in summarize(snapshot):
         click.echo("  " + line)
+    click.echo(click.style("\ncompeting coalitions", fg="cyan"))
+    for coalition in snapshot["coalitions"]:
+        members = ", ".join(coalition["cells"]) or "none active"
+        click.echo(f"  {coalition['regime']:<12} energy {coalition['energy']:.2f}  mean "
+                   f"{coalition['mean']:.2f}  {members}")
     click.echo(click.style("\nsignals", fg="cyan"))
     for name, value in snapshot["signals"].items():
         click.echo(f"  {name:<12} {value:.2f}")
     meta = snapshot["metacognition"]
     click.echo(click.style(f"\nmetacognition (surprise {meta['surprise']:.2f})", fg="cyan"))
-    for mode, stats in meta["calibration"].items():
-        click.echo(f"  {mode:<10} attempts {stats['attempts']:<3} confidence "
-                   f"{stats['confidence']:.2f} gain {stats['gain']:.2f} error {stats['mean_error']:.2f}")
+    for regime, stats in meta["calibration"].items():
+        click.echo(f"  {regime:<12} attempts {stats['attempts']:<3} confidence "
+                   f"{stats['confidence']:.2f} gain {stats['gain']:.2f} "
+                   f"error {stats['mean_error']:.2f}")
+    events = snapshot["morphogenesis"]["events"]
+    if events:
+        click.echo(click.style("\nlast morphogenesis", fg="cyan"))
+        for event in events:
+            detail = event.get("from") or event.get("into") or ""
+            click.echo(f"  {event.get('at', '')}  {event.get('type', ''):<6} "
+                       f"{event.get('cell', '')} {detail}".rstrip())
+
+
+@agent.command("morph")
+def morph_cmd():
+    """Restructure the field now: split overloaded cells, merge unused branches."""
+    brain = get_loop().brain
+    field = getattr(brain, "field", None)
+    if field is None:
+        click.echo(f"brain {brain.name} keeps no field")
+        return
+    report = field.morph()
+    field.save()
+    click.echo(click.style(f"--- Morphogenesis (generation {report['generation']}) ---", fg="cyan"))
+    click.echo(f"cells: {report['cells']}")
+    for event in report["events"]:
+        detail = event.get("from") or event.get("into") or ""
+        click.echo(f"  {event.get('type', ''):<6} {event.get('cell', '')} {detail}".rstrip())
+    if not report["events"]:
+        click.echo("  no structural change warranted")
 
 
 @agent.command("consolidate")

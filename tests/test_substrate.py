@@ -99,6 +99,20 @@ def test_different_classes_produce_materially_different_structures(repo):
                 substrate.generate(goals[3], root=repo).nodes}) > 0
 
 
+def test_a_composed_structure_is_visible_before_anything_runs(repo, monkeypatch):
+    """The dashboard reads `last()`, so a fresh structure must be there at composition."""
+    monkeypatch.setattr(substrate, "_LAST", {})
+    assert substrate.last() == {}
+
+    structure = substrate.generate("why does pkg/uses.py fail - find the cause", root=repo)
+
+    shown = substrate.last()
+    assert shown["goal"] == structure.goal
+    assert len(shown["nodes"]) == len(structure.nodes)
+    assert shown["signature"] == structure.signature()
+    assert "last_result" not in shown            # composed, nothing has run
+
+
 def test_a_remembered_procedure_changes_the_next_structure(repo, world):
     procedure = "debug:deterministic+retrieval+simulation"
     world.observe(["debug"], "observed", klass="debug", strategy=procedure)

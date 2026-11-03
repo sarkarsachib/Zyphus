@@ -391,6 +391,9 @@ def generate(goal: str, signals: Optional[Dict[str, Any]] = None, root: Optional
                        f"in converge instead of explore"),
             "added": ["recall_strategy"], "removed": [],
         })
+    # The dashboard shows the structure as soon as it exists, not only once something
+    # has run against it.
+    remember(substrate)
     return substrate
 
 

@@ -30,6 +30,9 @@ DEFAULT_SELF_INTERVAL = float(os.environ.get("ZYPHUS_AGENT_SELF_INTERVAL", "300"
 FOLLOW_UP_DELAY = float(os.environ.get("ZYPHUS_AGENT_CHAIN_DELAY", "20"))
 CONSOLIDATE_AFTER = int(os.environ.get("ZYPHUS_AGENT_CONSOLIDATE_AFTER", "20"))
 VITALS_TTL = 10.0
+# The cognitive field keeps evolving between ticks; this is how long one slice of
+# idle time is before it is integrated, so a waiting loop is never a frozen loop.
+FIELD_SLICE = float(os.environ.get("ZYPHUS_FIELD_SLICE", "2"))
 
 
 class AgentLoop:
@@ -52,11 +55,35 @@ class AgentLoop:
         self._vitals: Dict[str, Any] = {}
         self._vitals_at = 0.0
         self._consolidation: Optional[Any] = None
+        self._last_evolve_at = 0.0
+
+    # --- continuous cognition ------------------------------------------------
+
+    def _evolve_field(self, seconds: Optional[float] = None) -> Optional[Dict[str, Any]]:
+        """Let the brain's field keep running even when nothing is arriving.
+
+        Called at every tick and in slices while the loop waits, so a quiet agent
+        still settles, tires and restructures instead of freezing between tasks.
+        """
+        evolve = getattr(self.brain, "evolve", None)
+        if evolve is None:
+            return None
+        now = time.time()
+        elapsed = seconds if seconds is not None else max(0.0, now - self._last_evolve_at)
+        self._last_evolve_at = now
+        if elapsed <= 0:
+            return None
+        try:
+            return evolve(elapsed)
+        except Exception as exc:  # evolution must never break a tick
+            logger.warning("field evolution failed: %s", exc)
+            return None
 
     # --- one unit of work ----------------------------------------------------
 
     def tick(self) -> Dict[str, Any]:
         self.ticks += 1
+        self._evolve_field()
         self.last_tick_at = now_iso()
         task = self.store.claim_next()
         if task is None:
@@ -254,7 +281,17 @@ class AgentLoop:
                 self.tick()
             except Exception as exc:  # a bad tick must not kill the loop
                 logger.error("tick failed: %s", exc)
-            self._stop.wait(self._wait_seconds())
+            self._wait(self._wait_seconds())
+
+    def _wait(self, seconds: float) -> None:
+        """Wait, but keep the cognitive field evolving while doing it."""
+        deadline = time.time() + seconds
+        while not self._stop.is_set():
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            self._stop.wait(min(FIELD_SLICE, remaining))
+            self._evolve_field()
 
     def start_thread(self) -> None:
         if self._thread and self._thread.is_alive():

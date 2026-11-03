@@ -1,33 +1,36 @@
 """
-The brain, as one field.
+The brain, as one continuously evolving field.
 
-`AdaptiveFieldBrain` is the whole decision layer, and it does not choose a mode.
-It perceives the agent's situation as signals, lets `CognitiveField` settle, and
-then thinks *through* whatever equilibrium it landed in:
+`AdaptiveFieldBrain` is the whole decision layer, and it does not choose a
+regime. It perceives the situation as signals, lets the population of cognitive
+cells settle, and then thinks *through* whichever coalition currently holds the
+field:
 
-    plan        compose the plan and run it
-    explore     look before acting: ground the attempt in what is already known
-    deliberate  compose alternatives, predict each one, take the cheapest to be
-                right about
-    inhibit     run the plan, then queue a consolidation step
+    diffuse      spread activation: probe what is there, ground the attempt
+    structural   compose: recruit the planner, the model, the retrieval index
+    convergent   narrow and commit to the strongest candidate
 
-Instruction parsing and tool composition stay where they were
-(`DeliberativeBrain`), and a configured model is one more voice inside the field
-(`ModelBrain`) instead of the whole brain. Nothing here is scheduled: a waiting
-task raises `task` pressure, a run of failures raises `stagnation` and
-`surprise`, repetition raises `fatigue`, an unmapped world model raises
-`novelty`, and the mode that wins is what those add up to.
+The old deliberative planner is no longer the brain. It is the `planner`
+capability (`capabilities.py`), recruited by the composing cells like any other
+capability. Instruction parsing and tool composition still live in
+`DeliberativeBrain`; what changed is who decides to use it.
+
+Nothing here is scheduled: a waiting task raises `task` pressure, a run of
+failures raises `stagnation` and `surprise`, repetition raises `fatigue`, an
+unmapped world model raises `novelty`, and the coalition that wins is what those
+add up to. `evolve()` steps the same dynamics with no task at all, so the field
+keeps moving between perceptions instead of freezing.
 """
 
 import os
-import re
 import time
 from collections import deque
 from typing import Any, Dict, List, Optional
 
+from src.agent import capabilities as capability_layer
 from src.agent import counterfactual, rag, substrate
 from src.agent.brain import DeliberativeBrain, ToolCall
-from src.agent.field import HORIZON_SECONDS, CognitiveField
+from src.agent.field import ACTIVE_THRESHOLD, HORIZON_SECONDS, CognitiveField
 
 # What kind of act each tool is, for the counterfactual engine.
 TOOL_KINDS = {
@@ -49,8 +52,9 @@ TOOL_KINDS = {
     "look": "probe",
 }
 
-QUESTION = re.compile(r"\b(why|how|what|where|which|who|explain|understand|investigate|"
-                      r"diagnose|cause|reason)\b", re.IGNORECASE)
+# Which capability the regime's coalition always fields, even before a secondary
+# cell has crossed the activation threshold.
+PRIMARY_CAPABILITY = {"diffuse": "probe", "structural": "planner", "convergent": "planner"}
 
 # Signals whose world-model readings are cached: they are a SQLite read each.
 WORLD_TTL = 60.0
@@ -67,42 +71,47 @@ class AdaptiveFieldBrain:
                  field: Optional[CognitiveField] = None,
                  notes_dir: str = "devmind/agent/notes",
                  world_path: Optional[str] = None,
-                 history: int = 24):
+                 history: int = 24,
+                 capabilities: Optional[Dict[str, Any]] = None):
         self.composer = composer or DeliberativeBrain(notes_dir)
         self.model = model
         self.field = field or CognitiveField()
         self.world_path = world_path
+        self.capabilities = capabilities or capability_layer.default_capabilities(
+            self.composer, model, index_chunks=self._index_chunks)
         self.history: deque = deque(maxlen=history)
         self.tool_stats: Dict[str, Dict[str, int]] = {}
         self._world_cache = (0.0, {})
         self._index_cache = (0.0, 0)
-        self._last_mode: Optional[str] = None
+        self._last_regime: Optional[str] = None
         self._last_step_at = 0.0
+        self._last_context: Dict[str, Any] = {}
 
     # --- the loop's interface ------------------------------------------------
 
     def plan(self, task: Dict[str, Any]) -> List[ToolCall]:
-        """Perceive the task, settle the field, and act through the settled mode."""
-        mode = self.settle(task_pressure=1.0)
-        chosen = self.select(self.candidates(task, mode), mode)
-        self.field.metacognition.predict(mode, chosen["expected"])
-        self._last_mode = mode
+        """Perceive the task, settle the field, and act through the winning coalition."""
+        regime = self.settle(task_pressure=1.0)
+        coalition = self.field.coalition()
+        chosen = self.select(self.candidates(task, regime), regime, coalition)
+        self.field.metacognition.predict(regime, chosen["expected"])
+        self._last_regime = regime
         return chosen["calls"]
 
     def propose(self, context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, str]]:
         """Idle: what the field is drawn to now decides what gets worked on."""
         context = context or {}
-        mode = self.settle(task_pressure=0.0, context=context)
-        proposal = self.routine_for(mode, context)
-        self.field.metacognition.predict(mode)
-        self._last_mode = mode
+        regime = self.settle(task_pressure=0.0, context=context)
+        proposal = self.routine_for(regime)
+        self.field.metacognition.predict(regime)
+        self._last_regime = regime
         return proposal
 
     def follow_up(self, task: Dict[str, Any], outcome: Dict[str, Any]) -> Optional[Dict[str, str]]:
-        """Queue the next step the current mode implies."""
+        """Queue the next step the current coalition implies."""
         if outcome.get("action") == "failed":
             return {"title": "Re-check after a failed task", "instructions": "self:selftest"}
-        if self._last_mode == "inhibit":
+        if self._last_regime == "convergent":
             return {"title": "Consolidate what the last task produced",
                     "instructions": "self:reflect"}
         if (task.get("instructions") or "").startswith("self:inspect"):
@@ -122,22 +131,34 @@ class AdaptiveFieldBrain:
             entry["successes"] += 1 if success else 0
         self.history.append({
             "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "mode": self._last_mode or self.field.mode,
+            "regime": self._last_regime or self.field.regime,
             "ok": success,
             "tools": tools,
             "task": (task.get("instructions") or "")[:80],
         })
-        self._last_mode = None
+        self._last_regime = None
         try:
             self.field.save()
         except OSError:
             pass
         return resolution
 
+    # --- continuous evolution ------------------------------------------------
+
+    def evolve(self, seconds: float = HORIZON_SECONDS) -> Dict[str, Any]:
+        """Step the field with no task: the population keeps running on its own."""
+        signals = self.sense(task_pressure=0.0, context=self._last_context)
+        self.field.perceive(signals)
+        self.field.step(seconds=seconds if seconds and seconds > 0 else HORIZON_SECONDS)
+        self._last_step_at = time.time()
+        return {"regime": self.field.regime, "coalitions": self.field.coalitions(),
+                "steps": self.field.steps}
+
     # --- perception ----------------------------------------------------------
 
     def settle(self, task_pressure: float, context: Optional[Dict[str, Any]] = None) -> str:
-        """Read the situation, integrate the field for the elapsed time, return the mode."""
+        """Read the situation, integrate the field for the elapsed time, return the regime."""
+        self._last_context = context or {}
         signals = self.sense(task_pressure=task_pressure, context=context)
         self.field.perceive(signals)
         now = time.time()
@@ -197,7 +218,7 @@ class AdaptiveFieldBrain:
 
     @staticmethod
     def _fatigue(recent: List[Dict[str, Any]]) -> float:
-        """Repetition plus sustained busyness - what makes the field want to settle."""
+        """Repetition plus sustained busyness - what makes a coalition want to settle."""
         if not recent:
             return 0.0
         tools = [entry.get("tool") or "" for entry in recent]
@@ -256,68 +277,58 @@ class AdaptiveFieldBrain:
         self._index_cache = (now, chunks)
         return chunks
 
-    # --- composing candidates ------------------------------------------------
+    # --- recruiting capabilities ---------------------------------------------
 
-    def candidates(self, task: Dict[str, Any], mode: str) -> List[Dict[str, Any]]:
-        """The plans the current mode is willing to consider."""
-        instructions = (task.get("instructions") or "").strip()
-        direct = {"source": "direct", "calls": list(self.composer.plan(task))}
-        out = [direct]
+    def candidate_capabilities(self, regime: str) -> List[str]:
+        """Which capabilities the winning coalition fields, in recruitment order."""
+        names = [PRIMARY_CAPABILITY.get(regime, "planner")]
+        extras = {"diffuse": ("retrieval",), "structural": ("model", "retrieval"),
+                  "convergent": ()}.get(regime, ())
+        for name in extras:
+            if name not in names and self.field.recruited(name, ACTIVE_THRESHOLD):
+                names.append(name)
+        return names
 
-        if mode == "deliberate":
-            if self._index_chunks() and (QUESTION.search(instructions) or len(instructions) > 20):
-                out.append({"source": "grounded", "calls": [
-                    ToolCall("rag", {"action": "query", "text": instructions[:160]})
-                ] + list(direct["calls"])})
-            model_calls = self._model_plan(task)
-            if model_calls:
-                out.append({"source": "model", "calls": model_calls})
-        elif mode == "explore":
-            grounded = self._read_before_write(direct["calls"])
-            if grounded is not None:
-                out.append({"source": "probe", "calls": grounded})
-            elif self._index_chunks() and QUESTION.search(instructions):
-                out.append({"source": "grounded", "calls": [
-                    ToolCall("rag", {"action": "query", "text": instructions[:160]})
-                ] + list(direct["calls"])})
+    def candidates(self, task: Dict[str, Any], regime: str,
+                   coalition: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """The plans the active cells are willing to field."""
+        out: List[Dict[str, Any]] = []
+        for name in self.candidate_capabilities(regime):
+            capability = self.capabilities.get(name)
+            if capability is None or not capability.available():
+                continue
+            calls = capability.compose(task)
+            if calls:
+                out.append({"source": name, "capability": name, "calls": calls})
+        if not out:
+            out.append({"source": "probe", "capability": "probe",
+                        "calls": [ToolCall("list_dir", {"path": "src"})]})
         return out
-
-    @staticmethod
-    def _read_before_write(calls: List[ToolCall]) -> Optional[List[ToolCall]]:
-        """In explore mode, never overwrite a file the agent has not looked at."""
-        for call in calls[:2]:
-            if call.tool == "write_file":
-                path = str(call.arguments.get("path") or "")
-                if path and os.path.exists(path):
-                    return [ToolCall("read_file", {"path": path})] + list(calls)
-        return None
-
-    def _model_plan(self, task: Dict[str, Any]) -> List[ToolCall]:
-        if self.model is None:
-            return []
-        try:
-            if not self.model.available():
-                return []
-            calls = list(self.model.plan(task) or [])
-        except Exception:
-            return []
-        return calls
 
     # --- choosing between them -----------------------------------------------
 
-    def select(self, candidates: List[Dict[str, Any]], mode: str) -> Dict[str, Any]:
+    def select(self, candidates: List[Dict[str, Any]], regime: str,
+               coalition: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Score each candidate against predicted risk and measured reliability."""
-        scored = [self.score(candidate, mode) for candidate in candidates]
+        scored = [self.score(candidate, regime, coalition) for candidate in candidates]
         best = scored[0]
         for entry in scored[1:]:
             if entry["score"] > best["score"]:
                 best = entry
         return best
 
-    def score(self, candidate: Dict[str, Any], mode: str) -> Dict[str, Any]:
+    def confidence(self, regime: str, coalition: Optional[Dict[str, Any]] = None) -> float:
+        """How much this regime is trusted, blended with the coalition's own strength."""
+        meta = self.field.metacognition.confidence(regime)
+        energy = float((coalition or {}).get("energy", 0.0) or 0.0)
+        strength = min(1.0, energy * 1.5)
+        return round(0.6 * meta + 0.4 * strength, 4)
+
+    def score(self, candidate: Dict[str, Any], regime: str,
+              coalition: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         calls = candidate.get("calls") or []
         first = calls[0].tool if calls else ""
-        confidence = self.field.metacognition.confidence(mode)
+        confidence = self.confidence(regime, coalition)
         tool_rate = self.tool_rate(first)
         risk, cost = self.predict(first, calls)
         score = (0.55 * confidence + 0.25 * tool_rate + 0.20 * (1.0 - risk)
@@ -352,21 +363,20 @@ class AdaptiveFieldBrain:
 
     # --- what an idle field is drawn to --------------------------------------
 
-    def routine_for(self, mode: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
-        """The work the settled mode implies - no rotation counter anywhere."""
-        if mode == "inhibit":
-            return self._routine("self:reflect", "Consolidate what the last work produced")
-        if mode == "deliberate":
+    def routine_for(self, regime: str) -> Dict[str, str]:
+        """The work the winning coalition implies - no rotation counter anywhere."""
+        if regime == "convergent":
+            if (self.field.signals.get("fatigue", 0.0) > 0.5
+                    or self.field.signals.get("stagnation", 0.0) > 0.3):
+                return self._routine("self:reflect", "Consolidate what the last work produced")
+            return self._routine("self:improve", "Analyze a module with the AST analyzer")
+        if regime == "structural":
             concept = self._concept()
             if concept and self._open_hypothesis_work():
                 return self._routine(f"world: hypotheses {concept}",
                                      f"Generate hypotheses about {concept}")
             return self._routine("self:adapt", "Compose a structure for an open question")
-        if mode == "explore":
-            if self.field.signals.get("uncertainty", 0.0) > 0.6 and substrate.last():
-                return self._routine("predict: choose", "Pick the experiment that separates its hypotheses")
-            return self._routine("self:explore", "Read something it has not read")
-        return self._routine("self:improve", "Analyze a module with the AST analyzer")
+        return self._routine("self:explore", "Read something it has not read")
 
     @staticmethod
     def _routine(instructions: str, title: str) -> Dict[str, str]:
@@ -393,6 +403,11 @@ class AdaptiveFieldBrain:
         data["tools"] = {
             tool: {**entry, "rate": round(entry["successes"] / entry["attempts"], 3)}
             for tool, entry in sorted(self.tool_stats.items())[:8] if entry["attempts"]
+        }
+        data["capabilities"] = {
+            name: {"regime": capability.regime, "available": capability.available(),
+                   "description": capability.description}
+            for name, capability in sorted(self.capabilities.items())
         }
         data["state_path"] = self.field.path
         return data

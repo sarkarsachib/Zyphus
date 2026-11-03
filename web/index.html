@@ -252,6 +252,7 @@ code { font-family: ui-monospace, monospace; color: #b8c8dc; }
   <div class="panel">
     <div class="panel-head"><h2>Cognitive Field</h2><div class="badge" id="field-mode"><span class="dot"></span><span id="field-mode-text">…</span></div></div>
     <div id="field-bars"></div>
+    <div class="pills" id="field-coalitions" style="margin-top:8px"></div>
     <div class="pills" id="field-signals" style="margin-top:10px"></div>
     <div class="pills" id="field-meta" style="margin-top:8px"></div>
   </div>
@@ -489,18 +490,24 @@ function renderField(field) {
         <div style="height:100%;width:${Math.round(Math.min(1, val)*100)}%;background:${name === field.mode ? "var(--accent)" : "var(--line-2)"}"></div>
       </div>
     </div>`).join("");
+  $("field-coalitions").innerHTML = (field.coalitions || [])
+    .map(c => `<span>${esc(c.regime)} coalition <b>${Number(c.energy).toFixed(2)}</b>`
+      + ` · ${c.cells.length ? c.cells.map(esc).join(", ") : "none active"}</span>`).join("");
   $("field-signals").innerHTML = Object.entries(field.signals || {})
     .map(([k, v]) => `<span>${esc(k)} <b>${Number(v).toFixed(2)}</b></span>`).join("");
   const meta = field.metacognition || {};
   const cal = Object.entries(meta.calibration || {})
     .map(([k, v]) => `<span>${esc(k)} conf <b>${Number(v.confidence).toFixed(2)}</b> · n ${v.attempts}</span>`)
     .join("");
+  const morph = field.morphogenesis || {};
   $("field-meta").innerHTML = `<span>self-error <b>${Number(meta.surprise || 0).toFixed(2)}</b></span>`
-    + `<span>steps <b>${field.steps ?? 0}</b></span>` + cal;
+    + `<span>steps <b>${field.steps ?? 0}</b></span>`
+    + `<span>cells <b>${field.cell_count ?? 0}</b></span>`
+    + `<span>generation <b>${morph.generation ?? 0}</b></span>` + cal;
   const badge = $("field-mode");
   badge.classList.remove("ok","bad");
   if (Number(field.dominance ?? 0) > 0.1) badge.classList.add("ok");
-  $("field-mode-text").textContent = `${field.mode} · dominance ${Number(field.dominance ?? 0).toFixed(2)}`;
+  $("field-mode-text").textContent = `${field.regime || field.mode} · dominance ${Number(field.dominance ?? 0).toFixed(2)}`;
 }
 
 function renderConsolidation(memory) {
